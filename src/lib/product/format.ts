@@ -12,6 +12,18 @@ export function formatCompactUsd(value: string | number | null | undefined) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(number);
 }
 
+/** Formats protocol ratios (0.85) as user-facing percentages (85%). */
+export function formatPercentageRatio(value: string | number | null | undefined, digits = 2) {
+  if (value === null || value === undefined || value === "") return "—";
+  const ratio = Number(value);
+  if (!Number.isFinite(ratio)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "percent",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  }).format(ratio);
+}
+
 export function shortAddress(value: string | null | undefined, head = 6, tail = 4) {
   if (!value) return "Not configured";
   return value.length > head + tail + 1 ? `${value.slice(0, head)}…${value.slice(-tail)}` : value;

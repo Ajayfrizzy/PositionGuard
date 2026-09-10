@@ -6,7 +6,7 @@ import { z } from "zod";
 export const runtime = "nodejs"; export const maxDuration = 60;
 const reply = (value: unknown, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 export async function POST(request: Request) {
-  const auth = authenticateOperator(request); if (auth !== "authorized") return reply({ error: { code: auth === "unconfigured" ? "AUTH_NOT_CONFIGURED" : "UNAUTHORIZED", message: "Valid operator authorization is required." } }, auth === "unconfigured" ? 503 : 401);
+  const auth = authenticateOperator(request); if (auth !== "authorized") return reply({ error: { code: auth === "unconfigured" ? "AUTH_NOT_CONFIGURED" : "UNAUTHORIZED", message: auth === "unconfigured" ? "Execution authorization is unavailable." : "Execution authorization was not accepted." } }, auth === "unconfigured" ? 503 : 401);
   try {
     if (!request.headers.get("content-type")?.startsWith("application/json")) return reply({ error: { code: "INVALID_CONTENT_TYPE" } }, 415);
     const text = await request.text(); if (text.length > 128) return reply({ error: { code: "BODY_TOO_LARGE" } }, 413); const input = parseProtectionExecutionRequest(JSON.parse(text));

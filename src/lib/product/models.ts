@@ -60,6 +60,7 @@ export interface ProductData {
   analysisHealthFactor: string | null;
   candidates: CandidateView[];
   selectedCandidate: CandidateView | null;
+  protectionAttention: boolean;
   latestExecution: ExecutionView | null;
   executions: ExecutionView[];
   auditEvents: AuditView[];
@@ -68,6 +69,10 @@ export interface ProductData {
   rpc: ConnectionState;
   aave: ConnectionState;
   error: string | null;
+}
+
+export function shouldShowProtectionAttention(input: { policyEnabled: boolean; riskLevel: RiskLevel; decisionIsCurrent: boolean; decisionStatus: string | null; hasActionableCandidate: boolean }) {
+  return input.policyEnabled && input.riskLevel !== "SAFE" && input.decisionIsCurrent && input.hasActionableCandidate && ["READY", "REQUIRE_APPROVAL"].includes(input.decisionStatus ?? "");
 }
 
 const REASONS: Record<string, string> = {
@@ -85,7 +90,7 @@ export function mapCandidates(candidates: CandidateAction[], selectedId: string 
   return candidates.map(candidate => {
     const selected = candidate.id === selectedId;
     const state = selected ? "selected" : !candidate.valid ? "rejected" : candidate.requiresApproval ? "approval" : "valid";
-    const label = selected ? "Selected" : state === "rejected" ? "Rejected" : state === "approval" ? "Approval required" : "Valid alternative";
+    const label = selected ? "Selected" : state === "rejected" ? "Rejected" : state === "approval" ? "Requires approval" : "Valid but not selected";
     const reason = selected ? "Minimum Effective Intervention." : candidate.rejectionReason ? (REASONS[candidate.rejectionReason] ?? candidate.rejectionReason) : candidate.requiresApproval ? "Valid, but requires explicit approval." : "Reaches the target but uses more capital than the selected action.";
     return { ...candidate, state, label, reason };
   });

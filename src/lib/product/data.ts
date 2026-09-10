@@ -1,10 +1,11 @@
 import "server-only";
+import { cache } from "react";
 import { formatUnits, parseUnits } from "viem";
 import { getChain, getDefaultChain } from "../chains/config";
 import { getProtectionAsset } from "../chains/assets";
 import { getPrisma } from "../db/prisma";
 import type { CandidateAction, RiskLevel } from "../protection/types";
-import { mapCandidates, type ProductData, type ProductPolicy, type ProductPosition } from "./models";
+import { mapCandidates, shouldShowProtectionAttention, type ProductData, type ProductPolicy, type ProductPosition } from "./models";
 import { transactionExplorerUrl } from "./format";
 
 const EMPTY_POLICY: ProductPolicy = {
@@ -38,7 +39,7 @@ function positionFromSnapshot(snapshot: { healthFactor: { toString(): string } |
       const amount = (value: string) => decimals ? formatUnits(BigInt(value), decimals) : value;
       const usd = (value: string) => unit && baseUnit ? (Number(BigInt(value) * price) / Number(unit * baseUnit)).toString() : "0";
       const storedUsd = (value: unknown, rawValue: string) => typeof value === "string" || typeof value === "number" ? String(value) : usd(rawValue);
-      return { asset: string(reserve.asset ?? reserve.id, "unknown"), symbol: string(reserve.symbol, "Asset"), suppliedBalance: hasFormattedReserves ? suppliedRaw : amount(suppliedRaw), suppliedUsd: storedUsd(reserve.suppliedUsd, suppliedRaw), debtBalance: hasFormattedReserves ? debtRaw : amount(debtRaw), debtUsd: storedUsd(reserve.debtUsd, debtRaw), walletBalance: hasFormattedReserves ? walletRaw : amount(walletRaw), walletBalanceUsd: storedUsd(reserve.walletBalanceUsd, walletRaw), collateralEnabled: reserve.collateralEnabled === true || (!hasFormattedReserves && BigInt(suppliedRaw) > 0n), liquidationThreshold: reserve.liquidationThreshold === undefined ? (Number(reserve.liquidationThresholdBps ?? 0) / 100).toString() : string(reserve.liquidationThreshold) };
+      return { asset: string(reserve.asset ?? reserve.id, "unknown"), symbol: string(reserve.symbol, "Asset"), suppliedBalance: hasFormattedReserves ? suppliedRaw : amount(suppliedRaw), suppliedUsd: storedUsd(reserve.suppliedUsd, suppliedRaw), debtBalance: hasFormattedReserves ? debtRaw : amount(debtRaw), debtUsd: storedUsd(reserve.debtUsd, debtRaw), walletBalance: hasFormattedReserves ? walletRaw : amount(walletRaw), walletBalanceUsd: storedUsd(reserve.walletBalanceUsd, walletRaw), collateralEnabled: reserve.collateralEnabled === true || (!hasFormattedReserves && BigInt(suppliedRaw) > 0n), liquidationThreshold: reserve.liquidationThreshold === undefined ? (Number(reserve.liquidationThresholdBps ?? 0) / 10_000).toString() : string(reserve.liquidationThreshold) };
     }),
   };
 }
@@ -53,7 +54,7 @@ function executionDisplayAmount(asset: string, amount: string, chainId: number) 
 function executionAssetSymbol(asset: string, chainId: number) { try { return (["USDC", "WETH"] as const).find(symbol => symbol === asset.toUpperCase() || getProtectionAsset(chainId, symbol).address.toLowerCase() === asset.toLowerCase()) ?? asset; } catch { return asset; } }
 function liveRisk(healthFactor: string | null, policy: ProductPolicy): RiskLevel { if (healthFactor === null) return "SAFE"; const hf = parseUnits(healthFactor, 18); if (hf >= parseUnits(policy.targetHealthFactor, 18)) return "SAFE"; if (hf >= parseUnits(policy.warningHealthFactor, 18)) return "WATCH"; if (hf >= parseUnits(policy.emergencyHealthFactor, 18)) return "HIGH"; return "CRITICAL"; }
 
-export async function loadProductData(): Promise<ProductData> {
+async function loadProductDataUncached(): Promise<ProductData> {
   const network = getDefaultChain();
   const base = { network: { chainId: network.chainId, name: network.name, testnet: network.testnet, explorer: network.blockExplorerBaseUrl }, rpc: process.env[network.rpcEnvKey] ? "connected" as const : "disconnected" as const, keeperHub: { authenticated: process.env.KEEPERHUB_API_KEY ? "connected" as const : "disconnected" as const, senderVerified: process.env.KEEPERHUB_EXECUTION_WALLET ? "connected" as const : "unknown" as const, sender: process.env.KEEPERHUB_EXECUTION_WALLET ?? null } };
   try {
@@ -77,11 +78,16 @@ export async function loadProductData(): Promise<ProductData> {
     let riskLevel: RiskLevel = decision?.riskLevel ?? "SAFE";
     if (position.capturedAt) riskLevel = liveRisk(position.healthFactor, policy);
     const auditEvents = (user?.auditEvents ?? []).map(event => ({ id: event.id, type: event.type, severity: event.severity, message: event.message, createdAt: event.createdAt.toISOString(), metadata: record(event.metadata) }));
-    return { ...base, database: "connected", aave: position.capturedAt ? "connected" : "unknown", position, policy, riskLevel, analysisHealthFactor: decision?.snapshot.healthFactor?.toString() ?? null, candidates, selectedCandidate: candidates.find(candidate => candidate.state === "selected") ?? null, latestExecution: mappedExecutions[0] ?? null, executions: mappedExecutions, auditEvents, positionChangedAt: auditEvents.find(event => event.type === "POSITION_CHANGED")?.createdAt ?? null, error: null };
+    const selectedCandidate = candidates.find(candidate => candidate.state === "selected") ?? null;
+    const decisionIsCurrent = Boolean(decision && user?.snapshots[0] && decision.snapshotId === user.snapshots[0].id);
+    const protectionAttention = shouldShowProtectionAttention({ policyEnabled: policy.enabled, riskLevel, decisionIsCurrent, decisionStatus: decision?.status ?? null, hasActionableCandidate: Boolean(selectedCandidate?.valid) });
+    return { ...base, database: "connected", aave: position.capturedAt ? "connected" : "unknown", position, policy, riskLevel, analysisHealthFactor: decision?.snapshot.healthFactor?.toString() ?? null, candidates, selectedCandidate, protectionAttention, latestExecution: mappedExecutions[0] ?? null, executions: mappedExecutions, auditEvents, positionChangedAt: auditEvents.find(event => event.type === "POSITION_CHANGED")?.createdAt ?? null, error: null };
   } catch (error) {
     console.error("PRODUCT_DATA_LOAD_FAILED", error instanceof Error ? error.message : "Unknown error");
-    return { ...base, database: "disconnected", aave: "unknown", position: { ...EMPTY_POSITION, wallet: process.env.AAVE_WALLET_ADDRESS ?? null }, policy: EMPTY_POLICY, riskLevel: "SAFE", analysisHealthFactor: null, candidates: [], selectedCandidate: null, latestExecution: null, executions: [], auditEvents: [], positionChangedAt: null, error: "Live product data is temporarily unavailable. Check the database connection and migrations." };
+    return { ...base, database: "disconnected", aave: "unknown", position: { ...EMPTY_POSITION, wallet: process.env.AAVE_WALLET_ADDRESS ?? null }, policy: EMPTY_POLICY, riskLevel: "SAFE", analysisHealthFactor: null, candidates: [], selectedCandidate: null, protectionAttention: false, latestExecution: null, executions: [], auditEvents: [], positionChangedAt: null, error: "Live product data is temporarily unavailable. Check the database connection and migrations." };
   }
 }
+
+export const loadProductData = cache(loadProductDataUncached);
 
 export function chainForId(chainId: number) { return getChain(chainId); }

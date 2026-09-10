@@ -6,7 +6,7 @@ import { z } from "zod";
 export const runtime = "nodejs";
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 export async function PUT(request: Request) {
-  const auth = authenticateOperator(request); if (auth !== "authorized") return json({ error: { code: auth === "unconfigured" ? "AUTH_NOT_CONFIGURED" : "UNAUTHORIZED", message: auth === "unconfigured" ? "Operator authorization is not configured." : "Operator authorization failed." } }, auth === "unconfigured" ? 503 : 401);
+  const auth = authenticateOperator(request); if (auth !== "authorized") return json({ error: { code: auth === "unconfigured" ? "AUTH_NOT_CONFIGURED" : "UNAUTHORIZED", message: auth === "unconfigured" ? "Settings authorization is unavailable." : "Settings authorization was not accepted." } }, auth === "unconfigured" ? 503 : 401);
   try {
     if (!request.headers.get("content-type")?.startsWith("application/json")) return json({ error: { code: "INVALID_CONTENT_TYPE" } }, 415);
     const text = await request.text(); if (text.length > 8192) return json({ error: { code: "BODY_TOO_LARGE" } }, 413);
