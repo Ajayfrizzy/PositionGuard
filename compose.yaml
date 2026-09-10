@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: positionguard
+      POSTGRES_PASSWORD: positionguard
+      POSTGRES_DB: positionguard
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - positionguard_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U positionguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  positionguard_db:

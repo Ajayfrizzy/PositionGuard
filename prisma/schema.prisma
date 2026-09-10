@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RiskLevel {
+  SAFE
+  WATCH
+  HIGH
+  CRITICAL
+}
+
+enum ActionType {
+  NO_ACTION
+  REPAY_DEBT
+  ADD_COLLATERAL
+  REQUIRE_APPROVAL
+}
+
+enum DecisionStatus {
+  NO_ACTION
+  READY
+  REQUIRE_APPROVAL
+  NO_SAFE_ACTION
+  CANCELLED
+  COMPLETED
+}
+
+enum SimulationStatus {
+  NOT_STARTED
+  SUCCEEDED
+  FAILED
+}
+
+enum ExecutionStatus {
+  NOT_STARTED
+  SUBMITTED
+  CONFIRMED
+  FAILED
+  UNCONFIRMED
+  CANCELLED
+}
+
+enum Severity {
+  INFO
+  WARNING
+  ERROR
+}
+
+model User {
+  id            String               @id @default(cuid())
+  walletAddress String               @unique @db.VarChar(42)
+  createdAt     DateTime             @default(now())
+  policies      ProtectionPolicy[]
+  snapshots     PositionSnapshot[]
+  decisions     ProtectionDecision[]
+  auditEvents   AuditEvent[]
+}
+
+model ProtectionPolicy {
+  id                          String   @id @default(cuid())
+  userId                      String
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chainId                     Int
+  targetHealthFactor          Decimal  @db.Decimal(30, 6)
+  warningHealthFactor         Decimal  @db.Decimal(30, 6)
+  emergencyHealthFactor       Decimal  @db.Decimal(30, 6)
+  maxAutonomousAmountUsd      Decimal  @db.Decimal(30, 6)
+  maxDailyAutonomousAmountUsd Decimal  @db.Decimal(30, 6)
+  approvalRequiredAboveUsd    Decimal  @db.Decimal(30, 6)
+  allowRepay                  Boolean
+  allowAddCollateral          Boolean
+  interventionCooldownMinutes Int
+  enabled                     Boolean  @default(false)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@unique([userId, chainId])
+}
+
+model PositionSnapshot {
+  id                  String               @id @default(cuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chainId             Int
+  healthFactor        Decimal?             @db.Decimal(78, 18)
+  totalCollateralUsd  Decimal              @db.Decimal(38, 8)
+  totalDebtUsd        Decimal              @db.Decimal(38, 8)
+  availableBorrowsUsd Decimal              @db.Decimal(38, 8)
+  normalizedContext   Json
+  capturedAt          DateTime             @default(now())
+  blockNumber         BigInt?
+  blockHash           String?              @db.VarChar(66)
+  blockTimestamp      BigInt?
+  purpose             SnapshotPurpose      @default(OBSERVATION)
+  decisions           ProtectionDecision[]
+
+  @@index([userId, chainId, capturedAt])
+}
+
+model ProtectionDecision {
+  id                   String            @id @default(cuid())
+  userId               String
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  snapshotId           String
+  snapshot             PositionSnapshot  @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  riskLevel            RiskLevel
+  selectedAction       ActionType
+  selectedAsset        String?
+  selectedAmount       Decimal?          @db.Decimal(78, 18)
+  expectedHealthFactor Decimal?          @db.Decimal(78, 18)
+  reasoning            String
+  reasoningContext     Json
+  policyContext        Json
+  status               DecisionStatus
+  createdAt            DateTime          @default(now())
+  candidates           CandidateAction[]
+  executions           Execution[]
+
+  @@index([userId, createdAt])
+}
+
+model CandidateAction {
+  id                   String             @id @default(cuid())
+  decisionId           String
+  decision             ProtectionDecision @relation(fields: [decisionId], references: [id], onDelete: Restrict)
+  type                 ActionType
+  asset                String
+  amount               Decimal            @db.Decimal(78, 18)
+  estimatedUsdValue    Decimal            @db.Decimal(30, 6)
+  expectedHealthFactor Decimal?           @db.Decimal(78, 18)
+  valid                Boolean
+  policyValidity       Boolean
+  reachesTarget        Boolean
+  requiresApproval     Boolean
+  rejectionReason      String?
+  rank                 Int
+
+  @@unique([decisionId, rank])
+}
+
+model Execution {
+  id                   String             @id @default(cuid())
+  decisionId           String
+  decision             ProtectionDecision @relation(fields: [decisionId], references: [id], onDelete: Restrict)
+  keeperHubExecutionId String?            @unique
+  idempotencyKey       String             @unique
+  action               ActionType
+  asset                String
+  amount               Decimal            @db.Decimal(78, 0)
+  simulationStatus     SimulationStatus   @default(NOT_STARTED)
+  executionStatus      ExecutionStatus    @default(NOT_STARTED)
+  transactionHash      String?
+  transactionLink      String?
+  receiptVerified      Boolean            @default(false)
+  healthFactorBefore   Decimal?           @db.Decimal(78, 18)
+  healthFactorAfter    Decimal?           @db.Decimal(78, 18)
+  failureReason        String?
+  createdAt            DateTime           @default(now())
+  completedAt          DateTime?
+
+  @@index([decisionId])
+}
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type      String
+  severity  Severity
+  message   String
+  metadata  Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+enum SnapshotPurpose {
+  OBSERVATION
+  DECISION
+  PRE_EXECUTION
+  POST_EXECUTION
+}

@@ -1,0 +1,13 @@
+-- CreateEnum
+CREATE TYPE "SnapshotPurpose" AS ENUM ('OBSERVATION', 'DECISION', 'PRE_EXECUTION', 'POST_EXECUTION');
+
+-- AlterTable
+ALTER TABLE "PositionSnapshot" ADD COLUMN     "blockHash" VARCHAR(66),
+ADD COLUMN     "blockNumber" BIGINT,
+ADD COLUMN     "blockTimestamp" BIGINT,
+ADD COLUMN     "purpose" "SnapshotPurpose" NOT NULL DEFAULT 'OBSERVATION',
+ALTER COLUMN "healthFactor" SET DATA TYPE DECIMAL(78,18),
+ALTER COLUMN "totalCollateralUsd" SET DATA TYPE DECIMAL(38,8),
+ALTER COLUMN "totalDebtUsd" SET DATA TYPE DECIMAL(38,8),
+ALTER COLUMN "availableBorrowsUsd" SET DATA TYPE DECIMAL(38,8);
+
