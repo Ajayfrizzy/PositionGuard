@@ -1,4 +1,5 @@
 export interface ProtectionPolicy {
+  executionMode?: "MONITOR_ONLY" | "REQUIRE_APPROVAL" | "AUTONOMOUS";
   targetHealthFactor: string;
   warningHealthFactor: string;
   emergencyHealthFactor: string;

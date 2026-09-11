@@ -28,6 +28,41 @@ enum DecisionStatus {
   NO_SAFE_ACTION
   CANCELLED
   COMPLETED
+  PROTECTION_BLOCKED
+}
+
+enum PolicyExecutionMode {
+  MONITOR_ONLY
+  REQUIRE_APPROVAL
+  AUTONOMOUS
+}
+
+enum FundingReadinessStatus {
+  READY
+  INSUFFICIENT_BALANCE
+  INSUFFICIENT_ALLOWANCE
+  SENDER_MISMATCH
+  KEEPERHUB_UNAVAILABLE
+  UNSUPPORTED_ASSET
+}
+
+enum NotificationType {
+  RISK_WATCH
+  RISK_HIGH
+  RISK_CRITICAL
+  MEI_SELECTED
+  PROTECTION_BLOCKED
+  EXECUTION_STARTED
+  EXECUTION_CONFIRMED
+  EXECUTION_FAILED
+  POSITION_CHANGED
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  SKIPPED
 }
 
 enum SimulationStatus {
@@ -59,6 +94,8 @@ model User {
   snapshots     PositionSnapshot[]
   decisions     ProtectionDecision[]
   auditEvents   AuditEvent[]
+  notifications Notification[]
+  monitoringRuns MonitoringRun[]
 }
 
 model ProtectionPolicy {
@@ -76,6 +113,7 @@ model ProtectionPolicy {
   allowAddCollateral          Boolean
   interventionCooldownMinutes Int
   enabled                     Boolean  @default(false)
+  executionMode               PolicyExecutionMode @default(REQUIRE_APPROVAL)
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 
@@ -117,6 +155,9 @@ model ProtectionDecision {
   reasoningContext     Json
   policyContext        Json
   status               DecisionStatus
+  blockerReason        String?
+  fundingReadiness     FundingReadinessStatus?
+  fundingReadinessContext Json?
   createdAt            DateTime          @default(now())
   candidates           CandidateAction[]
   executions           Execution[]
@@ -177,6 +218,40 @@ model AuditEvent {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+model Notification {
+  id             String                     @id @default(cuid())
+  userId         String
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type           NotificationType
+  title          String
+  message        String
+  dedupeKey      String                     @unique
+  metadata       Json
+  readAt         DateTime?
+  webhookStatus  NotificationDeliveryStatus @default(PENDING)
+  webhookAttempts Int                       @default(0)
+  webhookLastError String?
+  createdAt      DateTime                   @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model MonitoringRun {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chainId            Int
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+  status             String
+  snapshotId         String?
+  decisionId         String?
+  executionOutcome   String?
+  errorCode          String?
+
+  @@index([userId, chainId, startedAt])
 }
 
 enum SnapshotPurpose {

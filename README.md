@@ -113,6 +113,9 @@ Open `http://localhost:3000`; `/` redirects to `/dashboard`.
 | `KEEPERHUB_BASE_URL` | Restricted official HTTPS origin |
 | `KEEPERHUB_EXECUTION_WALLET` | Expected sender pin |
 | `POSITIONGUARD_BROADCAST_TOKEN` | Separate 32+ character step-up authorization for broadcast |
+| `MONITOR_POLL_INTERVAL_MS` | Worker interval; clamped to at least 30 seconds |
+| `POSITIONGUARD_WEBHOOK_URL` | Optional persisted-notification webhook |
+| `POSITIONGUARD_WEBHOOK_SECRET` | Optional HMAC-SHA256 webhook signing secret |
 
 Never expose these through `NEXT_PUBLIC_` variables.
 
@@ -131,6 +134,8 @@ npm test
 npm run build
 ```
 
+Run one monitoring cycle with `npm run worker:monitor -- --once`, or start the long-running process with `npm run worker:monitor`. Each enabled protected account is processed independently. `MONITOR_ONLY` never simulates or broadcasts, `REQUIRE_APPROVAL` stops after simulation, and only an explicitly confirmed `AUTONOMOUS` policy can enter the existing broadcast orchestrator.
+
 Tests cover financial behavior, Aave normalization, policies, candidate mapping, timelines, stale cancellation, confirmed execution/audit mapping, explorer URL safety, AI validation/fallback, testnet labeling, and rejection of arbitrary execution fields.
 
 ## Demo and known limitations
@@ -138,7 +143,7 @@ Tests cover financial behavior, Aave normalization, policies, candidate mapping,
 See [the 2–3 minute demo script](docs/demo.md) and [Base Sepolia runbook](docs/base-sepolia-demo.md).
 
 - Only configured Base Aave reserves and repay/supply are supported.
-- Monitoring is a controlled cycle, not a hosted scheduler; recurring broadcasts are disabled.
-- Broadcast is implemented but remains explicit, step-up authorized, and intentionally unused during automated or simulation-only verification.
+- The worker must be deployed as a supervised process or invoked by hosted cron/job infrastructure.
+- Email delivery remains behind the notification-provider interface; persisted in-app and webhook delivery are implemented.
 - Product authorization currently uses the development operator token rather than wallet-session UX.
 - Database and provider availability depend on deployment networking.

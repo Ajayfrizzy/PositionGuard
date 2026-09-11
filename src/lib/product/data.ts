@@ -9,6 +9,7 @@ import { mapCandidates, shouldShowProtectionAttention, type ProductData, type Pr
 import { transactionExplorerUrl } from "./format";
 
 const EMPTY_POLICY: ProductPolicy = {
+  executionMode: "REQUIRE_APPROVAL",
   id: null, targetHealthFactor: "1.60", warningHealthFactor: "1.45", emergencyHealthFactor: "1.10",
   maxAutonomousAmountUsd: "250", maxDailyAutonomousAmountUsd: "500", approvalRequiredAboveUsd: "200",
   allowRepay: true, allowAddCollateral: true, interventionCooldownMinutes: 30, enabled: false, updatedAt: null,
@@ -65,10 +66,11 @@ async function loadProductDataUncached(): Promise<ProductData> {
       snapshots: { where: { chainId: network.chainId }, orderBy: { capturedAt: "desc" }, take: 1 },
       decisions: { orderBy: { createdAt: "desc" }, take: 1, include: { snapshot: true, candidates: { orderBy: { rank: "asc" } } } },
       auditEvents: { orderBy: { createdAt: "desc" }, take: 100 },
+      monitoringRuns: { where: { chainId: network.chainId }, orderBy: { startedAt: "desc" }, take: 1 },
     } });
     const executions = await db.execution.findMany({ where: user ? { decision: { userId: user.id } } : undefined, include: { decision: { include: { snapshot: true } } }, orderBy: { createdAt: "desc" }, take: 25 });
     const policyRow = user?.policies[0];
-    const policy: ProductPolicy = policyRow ? { id: policyRow.id, targetHealthFactor: policyRow.targetHealthFactor.toString(), warningHealthFactor: policyRow.warningHealthFactor.toString(), emergencyHealthFactor: policyRow.emergencyHealthFactor.toString(), maxAutonomousAmountUsd: policyRow.maxAutonomousAmountUsd.toString(), maxDailyAutonomousAmountUsd: policyRow.maxDailyAutonomousAmountUsd.toString(), approvalRequiredAboveUsd: policyRow.approvalRequiredAboveUsd.toString(), allowRepay: policyRow.allowRepay, allowAddCollateral: policyRow.allowAddCollateral, interventionCooldownMinutes: policyRow.interventionCooldownMinutes, enabled: policyRow.enabled, updatedAt: policyRow.updatedAt.toISOString() } : EMPTY_POLICY;
+    const policy: ProductPolicy = policyRow ? { id: policyRow.id, executionMode: policyRow.executionMode, targetHealthFactor: policyRow.targetHealthFactor.toString(), warningHealthFactor: policyRow.warningHealthFactor.toString(), emergencyHealthFactor: policyRow.emergencyHealthFactor.toString(), maxAutonomousAmountUsd: policyRow.maxAutonomousAmountUsd.toString(), maxDailyAutonomousAmountUsd: policyRow.maxDailyAutonomousAmountUsd.toString(), approvalRequiredAboveUsd: policyRow.approvalRequiredAboveUsd.toString(), allowRepay: policyRow.allowRepay, allowAddCollateral: policyRow.allowAddCollateral, interventionCooldownMinutes: policyRow.interventionCooldownMinutes, enabled: policyRow.enabled, updatedAt: policyRow.updatedAt.toISOString() } : EMPTY_POLICY;
     const position = user?.snapshots[0] ? positionFromSnapshot(user.snapshots[0], user.walletAddress) : { ...EMPTY_POSITION, wallet: user?.walletAddress ?? configuredWallet ?? null };
     const decision = user?.decisions[0];
     const rawCandidates: CandidateAction[] = (decision?.candidates ?? []).map(candidate => ({ id: candidate.id, type: candidate.type === "ADD_COLLATERAL" ? "ADD_COLLATERAL" : "REPAY_DEBT", asset: candidate.asset, assetSymbol: executionAssetSymbol(candidate.asset, network.chainId), amount: candidate.amount.toString(), tokenAmount: candidate.amount.toString(), estimatedUsdValue: candidate.estimatedUsdValue.toString(), expectedHealthFactor: candidate.expectedHealthFactor?.toString() ?? null, reachesTarget: candidate.reachesTarget, policyValidity: candidate.policyValidity, valid: candidate.valid, requiresApproval: candidate.requiresApproval, rejectionReason: candidate.rejectionReason as CandidateAction["rejectionReason"], rank: candidate.rank }));
@@ -81,10 +83,10 @@ async function loadProductDataUncached(): Promise<ProductData> {
     const selectedCandidate = candidates.find(candidate => candidate.state === "selected") ?? null;
     const decisionIsCurrent = Boolean(decision && user?.snapshots[0] && decision.snapshotId === user.snapshots[0].id);
     const protectionAttention = shouldShowProtectionAttention({ policyEnabled: policy.enabled, riskLevel, decisionIsCurrent, decisionStatus: decision?.status ?? null, hasActionableCandidate: Boolean(selectedCandidate?.valid) });
-    return { ...base, database: "connected", aave: position.capturedAt ? "connected" : "unknown", position, policy, riskLevel, analysisHealthFactor: decision?.snapshot.healthFactor?.toString() ?? null, candidates, selectedCandidate, protectionAttention, latestExecution: mappedExecutions[0] ?? null, executions: mappedExecutions, auditEvents, positionChangedAt: auditEvents.find(event => event.type === "POSITION_CHANGED")?.createdAt ?? null, error: null };
+    return { ...base, protectedAccountId: user?.id ?? null, monitoring: { active: policy.enabled, lastCheck: user?.monitoringRuns[0]?.completedAt?.toISOString() ?? position.capturedAt, status: user?.monitoringRuns[0]?.status ?? null }, fundingReadiness: decision?.fundingReadiness ?? null, database: "connected", aave: position.capturedAt ? "connected" : "unknown", position, policy, riskLevel, analysisHealthFactor: decision?.snapshot.healthFactor?.toString() ?? null, candidates, selectedCandidate, protectionAttention, latestExecution: mappedExecutions[0] ?? null, executions: mappedExecutions, auditEvents, positionChangedAt: auditEvents.find(event => event.type === "POSITION_CHANGED")?.createdAt ?? null, error: null };
   } catch (error) {
     console.error("PRODUCT_DATA_LOAD_FAILED", error instanceof Error ? error.message : "Unknown error");
-    return { ...base, database: "disconnected", aave: "unknown", position: { ...EMPTY_POSITION, wallet: process.env.AAVE_WALLET_ADDRESS ?? null }, policy: EMPTY_POLICY, riskLevel: "SAFE", analysisHealthFactor: null, candidates: [], selectedCandidate: null, protectionAttention: false, latestExecution: null, executions: [], auditEvents: [], positionChangedAt: null, error: "Live product data is temporarily unavailable. Check the database connection and migrations." };
+    return { ...base, protectedAccountId: null, monitoring: { active: false, lastCheck: null, status: null }, fundingReadiness: null, database: "disconnected", aave: "unknown", position: { ...EMPTY_POSITION, wallet: process.env.AAVE_WALLET_ADDRESS ?? null }, policy: EMPTY_POLICY, riskLevel: "SAFE", analysisHealthFactor: null, candidates: [], selectedCandidate: null, protectionAttention: false, latestExecution: null, executions: [], auditEvents: [], positionChangedAt: null, error: "Live product data is temporarily unavailable. Check the database connection and migrations." };
   }
 }
 

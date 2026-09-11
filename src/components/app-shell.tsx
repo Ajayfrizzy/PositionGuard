@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { Icon, ShieldMark } from "./icons";
 import { shortAddress } from "@/lib/product/format";
 
-const nav = [["/dashboard", "Overview", "grid"], ["/position", "Position", "position"], ["/protection", "Protection", "shield"], ["/activity", "Activity", "activity"], ["/settings", "Settings", "settings"]] as const;
+const nav = [["/dashboard", "Overview", "grid"], ["/position", "Position", "position"], ["/protection", "Protection", "shield"], ["/scenario", "Scenario", "activity"], ["/activity", "Activity", "activity"], ["/settings", "Settings", "settings"]] as const;
 export function AppShell({ children, protectedWallet, protectionAttention }: { children: React.ReactNode; protectedWallet: string | null; protectionAttention: boolean }) {
   const path = usePathname();
   if (path.startsWith("/dev/")) return <>{children}</>;

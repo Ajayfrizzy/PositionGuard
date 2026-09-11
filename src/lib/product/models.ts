@@ -2,6 +2,7 @@ import type { CandidateAction, RiskLevel } from "../protection/types";
 
 export type ConnectionState = "connected" | "disconnected" | "unknown";
 export interface ProductPolicy {
+  executionMode: "MONITOR_ONLY" | "REQUIRE_APPROVAL" | "AUTONOMOUS";
   id: string | null;
   targetHealthFactor: string;
   warningHealthFactor: string;
@@ -52,6 +53,7 @@ export interface ExecutionView {
 }
 export interface AuditView { id: string; type: string; severity: "INFO" | "WARNING" | "ERROR"; message: string; createdAt: string; metadata: Record<string, unknown> }
 export interface ProductData {
+  protectedAccountId: string | null;
   database: ConnectionState;
   network: { chainId: number; name: string; testnet: boolean; explorer: string };
   position: ProductPosition;
@@ -69,6 +71,8 @@ export interface ProductData {
   rpc: ConnectionState;
   aave: ConnectionState;
   error: string | null;
+  monitoring: { active: boolean; lastCheck: string | null; status: string | null };
+  fundingReadiness: string | null;
 }
 
 export function shouldShowProtectionAttention(input: { policyEnabled: boolean; riskLevel: RiskLevel; decisionIsCurrent: boolean; decisionStatus: string | null; hasActionableCandidate: boolean }) {

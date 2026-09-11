@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { decimalSchema, units, SCALE } from "../financial";
 export const policySchema = z.strictObject({
+  executionMode: z.enum(["MONITOR_ONLY", "REQUIRE_APPROVAL", "AUTONOMOUS"]).default("REQUIRE_APPROVAL"),
   targetHealthFactor: decimalSchema, warningHealthFactor: decimalSchema, emergencyHealthFactor: decimalSchema,
   maxAutonomousAmountUsd: decimalSchema, maxDailyAutonomousAmountUsd: decimalSchema, approvalRequiredAboveUsd: decimalSchema,
   allowRepay: z.boolean(), allowAddCollateral: z.boolean(), enabled: z.boolean(),

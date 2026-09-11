@@ -17,6 +17,7 @@ interface StoredPolicy {
   allowAddCollateral: boolean;
   interventionCooldownMinutes: number;
   enabled: boolean;
+  executionMode?: "MONITOR_ONLY" | "REQUIRE_APPROVAL" | "AUTONOMOUS";
   updatedAt: Date;
 }
 
@@ -57,6 +58,7 @@ export async function loadActiveProtectionPolicy(
     allowAddCollateral: row.allowAddCollateral,
     interventionCooldownMinutes: row.interventionCooldownMinutes,
     enabled: row.enabled,
+    executionMode: row.executionMode,
   });
   return { policyId: row.id, policyUpdatedAt: row.updatedAt.toISOString(), policy };
 }
