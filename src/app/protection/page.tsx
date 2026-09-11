@@ -2,7 +2,7 @@ import { Card, EmptyState, PageHeader, StatusPill } from "@/components/ui";
 import { ExecutionPanel } from "@/components/execution-panel";
 import { Icon } from "@/components/icons";
 import { deterministicExplanation } from "@/lib/agent/explanation";
-import { loadProductData } from "@/lib/product/data";
+import { loadCurrentProductData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber } from "@/lib/product/format";
 import type { CandidateView } from "@/lib/product/models";
 
@@ -19,7 +19,7 @@ function CandidateRow({ candidate, analysisHf }: { candidate: CandidateView; ana
 }
 
 export default async function ProtectionPage() {
-  const data = await loadProductData();
+  const data = await loadCurrentProductData();
   const selected = data.selectedCandidate;
   const actionable = data.riskLevel === "SAFE" ? null : selected;
   const analysisHf = data.analysisHealthFactor ?? data.position.healthFactor;
@@ -36,7 +36,7 @@ export default async function ProtectionPage() {
       <div className="candidate-list featured-candidates">{featured.map(candidate => <CandidateRow candidate={candidate} analysisHf={analysisHf} key={candidate.id}/>)}</div>
       {remaining.length > 0 && <details className="candidate-evidence"><summary><span>Review {remaining.length} remaining candidate{remaining.length === 1 ? "" : "s"}</span><small>Full policy and projection evidence</small></summary><div className="candidate-list">{remaining.map(candidate => <CandidateRow candidate={candidate} analysisHf={analysisHf} key={candidate.id}/>)}</div></details>}
     </> : <EmptyState title="No evaluated candidates">A stored protection decision with candidate records is required. PositionGuard never fabricates example actions.</EmptyState>}</Card>
-    <div className="explanation-card"><span className="eyebrow">SAFETY EXPLANATION · RULE-BASED</span><h2>Why this protection action?</h2><p>{explanation.riskSummary}</p><p>{explanation.selectionReason}</p><p>{explanation.policySummary}</p></div>
+    <div className="explanation-card"><span className="eyebrow">SAFETY EXPLANATION · RULE-BASED</span><h2>Why this matters</h2><p>{explanation.whyRiskChanged ?? explanation.riskSummary}</p><h2>Why this action</h2><p>{explanation.whyThisAction ?? explanation.selectionReason}</p><h2>What PositionGuard checked</h2><p>{explanation.policySummary}</p><h2>What happens next</h2><p>{explanation.whatHappensNext}</p><details><summary>Show technical details</summary><p>Candidate references: {explanation.referencedCandidateIds.join(", ") || "None"}</p>{explanation.rejectedReasons?.map(item => <p key={item.candidateId}>{item.candidateId}: {item.reason}</p>)}</details></div>
     <Card><div className="section-heading"><div><span className="label">Controlled execution</span><h2>Protection Execution</h2></div>{data.latestExecution && <StatusPill tone={data.latestExecution.status === "CONFIRMED" ? "good" : "neutral"}>{data.latestExecution.status}</StatusPill>}</div><ExecutionPanel execution={data.latestExecution} canRequest={data.policy.enabled}/></Card>
     {(data.latestExecution?.status === "CANCELLED" || data.positionChangedAt) && <div className="stale-state"><Icon name="activity"/><div><p className="eyebrow">POSITION CHANGED</p><h2>Stale intervention cancelled</h2><p>The Aave position changed after this protection recommendation was created. PositionGuard cancelled the stale intervention and recalculated protection.</p></div></div>}
     {data.latestExecution?.status === "CONFIRMED" && <Card className="success-card"><div className="success-mark"><Icon name="check"/></div><div><p className="eyebrow">PROTECTION SUCCESSFUL</p><h2>Health factor {formatNumber(data.latestExecution.healthFactorBefore, 4)} → {formatNumber(data.latestExecution.healthFactorAfter, 4)}</h2><p>{data.latestExecution.action === "REPAY_DEBT" ? "Repayment" : "Collateral supplied"}: <b>{data.latestExecution.displayAmount} {data.latestExecution.asset}</b></p></div><div className="success-proof"><span>KeeperHub <b>{data.latestExecution.keeperHubExecutionId ? "Verified" : "—"}</b></span><span>Aave <b>{data.latestExecution.receiptVerified ? "Receipt confirmed" : "Pending"}</b></span>{data.latestExecution.transactionLink && <a href={data.latestExecution.transactionLink} target="_blank" rel="noreferrer">View transaction <Icon name="external"/></a>}</div></Card>}

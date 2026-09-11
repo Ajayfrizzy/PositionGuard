@@ -64,7 +64,7 @@ export async function runProtectedAccountCycle(target: ProtectedAccountTarget, d
       readiness = selected.readiness;
       const disposition = executionDisposition({ mode: target.executionMode, actionable: Boolean(selected.candidate), ready: readiness?.state === "READY" });
       if (disposition === "BLOCK") blockerReason = blockerFor(readiness?.state ?? null);
-      else if (disposition === "SIMULATE" && selected.candidate) execution = await dependencies.simulate({ mode: "simulate", walletAddress: target.walletAddress, chainId: target.chainId, candidateId: selected.candidate.id });
+      else if (disposition === "SIMULATE" && selected.candidate) { execution = await dependencies.simulate({ mode: "simulate", walletAddress: target.walletAddress, chainId: target.chainId, candidateId: selected.candidate.id }); await safeNotify({ userId: target.protectedAccountId, type: "APPROVAL_REQUIRED", title: "Your approval is required", message: "A protection action passed simulation and is waiting for your approval.", dedupeKey: `${target.protectedAccountId}:${target.chainId}:approval:${selected.candidate.id}`, metadata: { candidateId: selected.candidate.id } }); }
       else if (disposition === "EXECUTE" && selected.candidate) {
         await safeNotify({ userId: target.protectedAccountId, type: "EXECUTION_STARTED", title: "Autonomous protection started", message: "All preflight readiness checks passed.", dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${selected.candidate.id}:started` });
         try {

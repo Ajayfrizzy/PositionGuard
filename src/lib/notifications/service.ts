@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 import { getPrisma } from "../db/prisma";
 import type { Prisma } from "../../generated/prisma/client";
 
-export const notificationTypes = ["RISK_WATCH", "RISK_HIGH", "RISK_CRITICAL", "MEI_SELECTED", "PROTECTION_BLOCKED", "EXECUTION_STARTED", "EXECUTION_CONFIRMED", "EXECUTION_FAILED", "POSITION_CHANGED"] as const;
+export const notificationTypes = ["RISK_WATCH", "RISK_HIGH", "RISK_CRITICAL", "MEI_SELECTED", "PROTECTION_BLOCKED", "APPROVAL_REQUIRED", "EXECUTION_STARTED", "EXECUTION_CONFIRMED", "EXECUTION_FAILED", "POSITION_CHANGED"] as const;
 export type NotificationEventType = typeof notificationTypes[number];
 export interface NotificationEvent { userId: string; type: NotificationEventType; title: string; message: string; dedupeKey: string; metadata?: Record<string, unknown> }
 export interface NotificationStore {

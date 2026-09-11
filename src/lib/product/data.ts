@@ -7,6 +7,7 @@ import { getPrisma } from "../db/prisma";
 import type { CandidateAction, RiskLevel } from "../protection/types";
 import { mapCandidates, shouldShowProtectionAttention, type ProductData, type ProductPolicy, type ProductPosition } from "./models";
 import { transactionExplorerUrl } from "./format";
+import { mapWorkerHealth } from "./status";
 
 const EMPTY_POLICY: ProductPolicy = {
   executionMode: "REQUIRE_APPROVAL",
@@ -55,20 +56,20 @@ function executionDisplayAmount(asset: string, amount: string, chainId: number) 
 function executionAssetSymbol(asset: string, chainId: number) { try { return (["USDC", "WETH"] as const).find(symbol => symbol === asset.toUpperCase() || getProtectionAsset(chainId, symbol).address.toLowerCase() === asset.toLowerCase()) ?? asset; } catch { return asset; } }
 function liveRisk(healthFactor: string | null, policy: ProductPolicy): RiskLevel { if (healthFactor === null) return "SAFE"; const hf = parseUnits(healthFactor, 18); if (hf >= parseUnits(policy.targetHealthFactor, 18)) return "SAFE"; if (hf >= parseUnits(policy.warningHealthFactor, 18)) return "WATCH"; if (hf >= parseUnits(policy.emergencyHealthFactor, 18)) return "HIGH"; return "CRITICAL"; }
 
-async function loadProductDataUncached(): Promise<ProductData> {
-  const network = getDefaultChain();
+async function loadProductDataUncached(accountScope?: string | null, chainScope?: number): Promise<ProductData> {
+  const network = chainScope ? getChain(chainScope) : getDefaultChain();
   const base = { network: { chainId: network.chainId, name: network.name, testnet: network.testnet, explorer: network.blockExplorerBaseUrl }, rpc: process.env[network.rpcEnvKey] ? "connected" as const : "disconnected" as const, keeperHub: { authenticated: process.env.KEEPERHUB_API_KEY ? "connected" as const : "disconnected" as const, senderVerified: process.env.KEEPERHUB_EXECUTION_WALLET ? "connected" as const : "unknown" as const, sender: process.env.KEEPERHUB_EXECUTION_WALLET ?? null } };
   try {
     const db = getPrisma();
     const configuredWallet = process.env.AAVE_WALLET_ADDRESS?.toLowerCase();
-    const user = await db.user.findFirst({ where: configuredWallet ? { walletAddress: configuredWallet } : undefined, orderBy: { createdAt: "desc" }, include: {
+    const user = await db.user.findFirst({ where: accountScope === null ? { id: "__unauthenticated__" } : accountScope ? { id: accountScope } : configuredWallet ? { walletAddress: configuredWallet } : undefined, orderBy: { createdAt: "desc" }, include: {
       policies: { where: { chainId: network.chainId }, orderBy: { updatedAt: "desc" }, take: 1 },
       snapshots: { where: { chainId: network.chainId }, orderBy: { capturedAt: "desc" }, take: 1 },
       decisions: { orderBy: { createdAt: "desc" }, take: 1, include: { snapshot: true, candidates: { orderBy: { rank: "asc" } } } },
       auditEvents: { orderBy: { createdAt: "desc" }, take: 100 },
       monitoringRuns: { where: { chainId: network.chainId }, orderBy: { startedAt: "desc" }, take: 1 },
     } });
-    const executions = await db.execution.findMany({ where: user ? { decision: { userId: user.id } } : undefined, include: { decision: { include: { snapshot: true } } }, orderBy: { createdAt: "desc" }, take: 25 });
+    const executions = await db.execution.findMany({ where: user ? { decision: { userId: user.id } } : accountScope === null ? { id: "__unauthenticated__" } : undefined, include: { decision: { include: { snapshot: true } } }, orderBy: { createdAt: "desc" }, take: 25 });
     const policyRow = user?.policies[0];
     const policy: ProductPolicy = policyRow ? { id: policyRow.id, executionMode: policyRow.executionMode, targetHealthFactor: policyRow.targetHealthFactor.toString(), warningHealthFactor: policyRow.warningHealthFactor.toString(), emergencyHealthFactor: policyRow.emergencyHealthFactor.toString(), maxAutonomousAmountUsd: policyRow.maxAutonomousAmountUsd.toString(), maxDailyAutonomousAmountUsd: policyRow.maxDailyAutonomousAmountUsd.toString(), approvalRequiredAboveUsd: policyRow.approvalRequiredAboveUsd.toString(), allowRepay: policyRow.allowRepay, allowAddCollateral: policyRow.allowAddCollateral, interventionCooldownMinutes: policyRow.interventionCooldownMinutes, enabled: policyRow.enabled, updatedAt: policyRow.updatedAt.toISOString() } : EMPTY_POLICY;
     const position = user?.snapshots[0] ? positionFromSnapshot(user.snapshots[0], user.walletAddress) : { ...EMPTY_POSITION, wallet: user?.walletAddress ?? configuredWallet ?? null };
@@ -83,10 +84,11 @@ async function loadProductDataUncached(): Promise<ProductData> {
     const selectedCandidate = candidates.find(candidate => candidate.state === "selected") ?? null;
     const decisionIsCurrent = Boolean(decision && user?.snapshots[0] && decision.snapshotId === user.snapshots[0].id);
     const protectionAttention = shouldShowProtectionAttention({ policyEnabled: policy.enabled, riskLevel, decisionIsCurrent, decisionStatus: decision?.status ?? null, hasActionableCandidate: Boolean(selectedCandidate?.valid) });
-    return { ...base, protectedAccountId: user?.id ?? null, monitoring: { active: policy.enabled, lastCheck: user?.monitoringRuns[0]?.completedAt?.toISOString() ?? position.capturedAt, status: user?.monitoringRuns[0]?.status ?? null }, fundingReadiness: decision?.fundingReadiness ?? null, database: "connected", aave: position.capturedAt ? "connected" : "unknown", position, policy, riskLevel, analysisHealthFactor: decision?.snapshot.healthFactor?.toString() ?? null, candidates, selectedCandidate, protectionAttention, latestExecution: mappedExecutions[0] ?? null, executions: mappedExecutions, auditEvents, positionChangedAt: auditEvents.find(event => event.type === "POSITION_CHANGED")?.createdAt ?? null, error: null };
+    const lastCheck = user?.monitoringRuns[0]?.completedAt?.toISOString() ?? position.capturedAt; const worker = mapWorkerHealth({ enabled: policy.enabled, lastCheck, lastRunStatus: user?.monitoringRuns[0]?.status ?? null, pollingIntervalMs: Math.max(30_000, Number(process.env.MONITOR_POLL_INTERVAL_MS ?? 60_000) || 60_000) });
+    return { ...base, protectedAccountId: user?.id ?? null, monitoring: { active: policy.enabled, lastCheck, status: worker.status }, fundingReadiness: decision?.fundingReadiness ?? null, database: "connected", aave: position.capturedAt ? "connected" : "unknown", position, policy, riskLevel, analysisHealthFactor: decision?.snapshot.healthFactor?.toString() ?? null, candidates, selectedCandidate, protectionAttention, latestExecution: mappedExecutions[0] ?? null, executions: mappedExecutions, auditEvents, positionChangedAt: auditEvents.find(event => event.type === "POSITION_CHANGED")?.createdAt ?? null, error: null };
   } catch (error) {
     console.error("PRODUCT_DATA_LOAD_FAILED", error instanceof Error ? error.message : "Unknown error");
-    return { ...base, protectedAccountId: null, monitoring: { active: false, lastCheck: null, status: null }, fundingReadiness: null, database: "disconnected", aave: "unknown", position: { ...EMPTY_POSITION, wallet: process.env.AAVE_WALLET_ADDRESS ?? null }, policy: EMPTY_POLICY, riskLevel: "SAFE", analysisHealthFactor: null, candidates: [], selectedCandidate: null, protectionAttention: false, latestExecution: null, executions: [], auditEvents: [], positionChangedAt: null, error: "Live product data is temporarily unavailable. Check the database connection and migrations." };
+    return { ...base, protectedAccountId: null, monitoring: { active: false, lastCheck: null, status: null }, fundingReadiness: null, database: "disconnected", aave: "unknown", position: { ...EMPTY_POSITION, wallet: accountScope === undefined ? process.env.AAVE_WALLET_ADDRESS ?? null : null }, policy: EMPTY_POLICY, riskLevel: "SAFE", analysisHealthFactor: null, candidates: [], selectedCandidate: null, protectionAttention: false, latestExecution: null, executions: [], auditEvents: [], positionChangedAt: null, error: "Live product data is temporarily unavailable. Check the database connection and migrations." };
   }
 }
 

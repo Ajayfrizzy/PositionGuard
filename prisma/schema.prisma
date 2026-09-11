@@ -52,6 +52,7 @@ enum NotificationType {
   RISK_CRITICAL
   MEI_SELECTED
   PROTECTION_BLOCKED
+  APPROVAL_REQUIRED
   EXECUTION_STARTED
   EXECUTION_CONFIRMED
   EXECUTION_FAILED
@@ -96,6 +97,39 @@ model User {
   auditEvents   AuditEvent[]
   notifications Notification[]
   monitoringRuns MonitoringRun[]
+  walletChallenges WalletChallenge[]
+  sessions        UserSession[]
+}
+
+model WalletChallenge {
+  id            String   @id @default(cuid())
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress String   @db.VarChar(42)
+  chainId       Int
+  nonceHash     String   @unique @db.VarChar(64)
+  message       String   @db.VarChar(1000)
+  expiresAt     DateTime
+  consumedAt    DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([walletAddress, chainId, createdAt])
+}
+
+model UserSession {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress      String   @db.VarChar(42)
+  chainId            Int
+  protectedAccountId String
+  tokenHash          String   @unique @db.VarChar(64)
+  expiresAt          DateTime
+  revokedAt          DateTime?
+  createdAt          DateTime @default(now())
+  lastSeenAt         DateTime @default(now())
+
+  @@index([userId, expiresAt])
 }
 
 model ProtectionPolicy {

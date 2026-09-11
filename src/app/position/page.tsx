@@ -1,5 +1,5 @@
 import { Card, EmptyState, Metric, PageHeader, StatusPill } from "@/components/ui";
-import { loadProductData } from "@/lib/product/data";
+import { loadCurrentProductData as loadProductData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber, formatPercentageRatio, shortAddress, timeAgo } from "@/lib/product/format";
 export const dynamic = "force-dynamic";
 export default async function PositionPage() {
