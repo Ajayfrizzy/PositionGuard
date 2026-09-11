@@ -20,11 +20,11 @@ describe("demo UI polish contracts", () => {
 
   it("contains tablet and mobile overflow safeguards", () => {
     const css = source("src/app/globals.css");
-    expect(css).toContain("@media(max-width:1180px)");
-    expect(css).toContain("@media(max-width:820px)");
-    expect(css).toContain("@media(max-width:560px)");
-    expect(css).toContain("table{min-width:680px}");
-    expect(css).toContain("overflow-wrap:anywhere");
+    expect(css).toMatch(/@media\s*\(max-width:\s*1180px\)/);
+    expect(css).toMatch(/@media\s*\(max-width:\s*820px\)/);
+    expect(css).toMatch(/@media\s*\(max-width:\s*560px\)/);
+    expect(css).toMatch(/table\s*{[^}]*min-width:\s*680px/);
+    expect(css).toContain("overflow-wrap: anywhere");
     expect(css).toContain(":focus-visible");
   });
 });

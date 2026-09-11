@@ -6,14 +6,14 @@ Base Sepolia (chain ID 84532) is PositionGuard's development and hackathon-demo 
 
 These addresses come from the official [Aave Base Sepolia address book](https://github.com/aave-dao/aave-address-book/blob/main/src/AaveV3BaseSepolia.sol):
 
-| Component | Address |
-| --- | --- |
-| Aave V3 Pool | `0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27` |
-| Pool Data Provider | `0xBc9f5b7E248451CdD7cA54e717a2BFe1F32b566b` |
-| Addresses Provider | `0xE4C23309117Aa30342BFaae6c95c6478e0A4Ad00` |
-| Oracle | `0x943b0dE18d4abf4eF02A85912F8fc07684C141dF` |
+| Component                      | Address                                      |
+| ------------------------------ | -------------------------------------------- |
+| Aave V3 Pool                   | `0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27` |
+| Pool Data Provider             | `0xBc9f5b7E248451CdD7cA54e717a2BFe1F32b566b` |
+| Addresses Provider             | `0xE4C23309117Aa30342BFaae6c95c6478e0A4Ad00` |
+| Oracle                         | `0x943b0dE18d4abf4eF02A85912F8fc07684C141dF` |
 | Aave reserve USDC (6 decimals) | `0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f` |
-| WETH (18 decimals) | `0x4200000000000000000000000000000000000006` |
+| WETH (18 decimals)             | `0x4200000000000000000000000000000000000006` |
 
 The Aave reserve USDC above is not Circle's Base Sepolia USDC at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`. Circle test USDC cannot repay debt in Aave's configured test-USDC reserve.
 

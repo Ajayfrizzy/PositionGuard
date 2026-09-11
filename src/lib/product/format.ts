@@ -2,14 +2,21 @@ export function formatNumber(value: string | number | null | undefined, digits =
   if (value === null || value === undefined || value === "") return "—";
   const number = Number(value);
   if (!Number.isFinite(number)) return "—";
-  return new Intl.NumberFormat("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(number);
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(number);
 }
 
 export function formatCompactUsd(value: string | number | null | undefined) {
   if (value === null || value === undefined) return "$—";
   const number = Number(value);
   if (!Number.isFinite(number)) return "$—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(number);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(number);
 }
 
 /** Formats protocol ratios (0.85) as user-facing percentages (85%). */

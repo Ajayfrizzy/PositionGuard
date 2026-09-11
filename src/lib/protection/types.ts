@@ -11,7 +11,16 @@ export interface NormalizedPosition {
   debtAsset: string;
   collateralAsset: string;
 }
-export type RejectionReason = "POLICY_DISABLED" | "ACTION_DISABLED" | "INSUFFICIENT_BALANCE" | "INVALID_AMOUNT" | "AUTONOMOUS_LIMIT" | "DAILY_LIMIT" | "COOLDOWN" | "BELOW_TARGET" | "SUPPLY_CAP";
+export type RejectionReason =
+  | "POLICY_DISABLED"
+  | "ACTION_DISABLED"
+  | "INSUFFICIENT_BALANCE"
+  | "INVALID_AMOUNT"
+  | "AUTONOMOUS_LIMIT"
+  | "DAILY_LIMIT"
+  | "COOLDOWN"
+  | "BELOW_TARGET"
+  | "SUPPLY_CAP";
 export interface CandidateAction {
   id: string;
   type: InterventionType;

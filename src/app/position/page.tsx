@@ -1,18 +1,206 @@
 import { Card, EmptyState, Metric, PageHeader, StatusPill } from "@/components/ui";
 import { loadCurrentProductData as loadProductData } from "@/lib/product/current-data";
-import { formatCompactUsd, formatNumber, formatPercentageRatio, shortAddress, timeAgo } from "@/lib/product/format";
+import {
+  formatCompactUsd,
+  formatNumber,
+  formatPercentageRatio,
+  shortAddress,
+  timeAgo,
+} from "@/lib/product/format";
 export const dynamic = "force-dynamic";
 export default async function PositionPage() {
-  const data = await loadProductData(); const supplied = data.position.reserves.filter(r => Number(r.suppliedBalance) > 0); const borrowed = data.position.reserves.filter(r => Number(r.debtUsd) > 0); const balances = data.position.reserves.filter(r => Number(r.walletBalance) > 0);
-  return <div className="page"><PageHeader eyebrow="AAVE V3 · BASE SEPOLIA" title="Position Details" description="Protocol-level position data captured at a consistent block."><StatusPill tone={data.aave === "connected" ? "good" : "neutral"}>{data.aave === "connected" ? "LIVE SNAPSHOT" : "NO SNAPSHOT"}</StatusPill></PageHeader>
-    <div className="metric-grid"><Metric label="Health factor" value={formatNumber(data.position.healthFactor, 4)} detail={`Target ${formatNumber(data.policy.targetHealthFactor, 2)}`}/><Metric label="Liquidation threshold" value={formatPercentageRatio(data.position.liquidationThreshold)} detail="Weighted across collateral"/><Metric label="Available borrow" value={formatCompactUsd(data.position.availableBorrowsUsd)} detail="Aave account value"/><Metric label="Snapshot block" value={data.position.blockNumber ? `#${data.position.blockNumber}` : "—"} detail={data.position.capturedAt ? timeAgo(data.position.capturedAt) : "Not captured"}/></div>
-    <Card className="position-identity"><div><span className="label">Protected wallet</span><code>{data.position.wallet ?? "Not configured"}</code></div><div><span className="label">Data freshness</span><b>{data.position.capturedAt ? new Date(data.position.capturedAt).toLocaleString() : "No database snapshot"}</b></div><div><span className="label">Block timestamp</span><b>{data.position.blockTimestamp ? new Date(Number(data.position.blockTimestamp) * 1000).toLocaleString() : "—"}</b></div></Card>
-    {!data.position.capturedAt ? <Card><EmptyState title="No position snapshot">Use the engineering verifier to capture a live Aave position for {shortAddress(data.position.wallet)}.</EmptyState></Card> : <div className="asset-sections">
-      <AssetTable title="Supplied collateral" rows={supplied} columns="supplied" empty="No supplied collateral in supported reserves."/>
-      <AssetTable title="Borrowed assets" rows={borrowed} columns="debt" empty="No borrowed assets in supported reserves."/>
-      <AssetTable title="Wallet protection balances" rows={balances} columns="wallet" empty="No supported protection balances available."/>
-    </div>}
-    <Card><div className="section-heading"><div><span className="label">Reserve information</span><h2>Risk parameters</h2></div></div>{data.position.reserves.length ? <div className="table-wrap"><table><thead><tr><th>Asset</th><th>Collateral enabled</th><th>Liquidation threshold</th><th>Supplied value</th><th>Debt value</th><th>Wallet value</th></tr></thead><tbody>{data.position.reserves.map(row => <tr key={row.asset}><td><b>{row.symbol}</b><small>{shortAddress(row.asset)}</small></td><td>{row.collateralEnabled ? <StatusPill tone="good">Enabled</StatusPill> : <StatusPill>Disabled</StatusPill>}</td><td>{formatPercentageRatio(row.liquidationThreshold)}</td><td>{formatCompactUsd(row.suppliedUsd)}</td><td>{formatCompactUsd(row.debtUsd)}</td><td>{formatCompactUsd(row.walletBalanceUsd)}</td></tr>)}</tbody></table></div> : <p className="empty-row">No reserve data is stored in the latest snapshot.</p>}</Card>
-  </div>;
+  const data = await loadProductData();
+  const supplied = data.position.reserves.filter((r) => Number(r.suppliedBalance) > 0);
+  const borrowed = data.position.reserves.filter((r) => Number(r.debtUsd) > 0);
+  const balances = data.position.reserves.filter((r) => Number(r.walletBalance) > 0);
+  return (
+    <div className="page">
+      <PageHeader
+        eyebrow="AAVE V3 · BASE SEPOLIA"
+        title="Position Details"
+        description="Protocol-level position data captured at a consistent block."
+      >
+        <StatusPill tone={data.aave === "connected" ? "good" : "neutral"}>
+          {data.aave === "connected" ? "LIVE SNAPSHOT" : "NO SNAPSHOT"}
+        </StatusPill>
+      </PageHeader>
+      <div className="metric-grid">
+        <Metric
+          label="Health factor"
+          value={formatNumber(data.position.healthFactor, 4)}
+          detail={`Target ${formatNumber(data.policy.targetHealthFactor, 2)}`}
+        />
+        <Metric
+          label="Liquidation threshold"
+          value={formatPercentageRatio(data.position.liquidationThreshold)}
+          detail="Weighted across collateral"
+        />
+        <Metric
+          label="Available borrow"
+          value={formatCompactUsd(data.position.availableBorrowsUsd)}
+          detail="Aave account value"
+        />
+        <Metric
+          label="Snapshot block"
+          value={data.position.blockNumber ? `#${data.position.blockNumber}` : "—"}
+          detail={data.position.capturedAt ? timeAgo(data.position.capturedAt) : "Not captured"}
+        />
+      </div>
+      <Card className="position-identity">
+        <div>
+          <span className="label">Protected wallet</span>
+          <code>{data.position.wallet ?? "Not configured"}</code>
+        </div>
+        <div>
+          <span className="label">Data freshness</span>
+          <b>
+            {data.position.capturedAt
+              ? new Date(data.position.capturedAt).toLocaleString()
+              : "No database snapshot"}
+          </b>
+        </div>
+        <div>
+          <span className="label">Block timestamp</span>
+          <b>
+            {data.position.blockTimestamp
+              ? new Date(Number(data.position.blockTimestamp) * 1000).toLocaleString()
+              : "—"}
+          </b>
+        </div>
+      </Card>
+      {!data.position.capturedAt ? (
+        <Card>
+          <EmptyState title="No position snapshot">
+            Use the engineering verifier to capture a live Aave position for{" "}
+            {shortAddress(data.position.wallet)}.
+          </EmptyState>
+        </Card>
+      ) : (
+        <div className="asset-sections">
+          <AssetTable
+            title="Supplied collateral"
+            rows={supplied}
+            columns="supplied"
+            empty="No supplied collateral in supported reserves."
+          />
+          <AssetTable
+            title="Borrowed assets"
+            rows={borrowed}
+            columns="debt"
+            empty="No borrowed assets in supported reserves."
+          />
+          <AssetTable
+            title="Wallet protection balances"
+            rows={balances}
+            columns="wallet"
+            empty="No supported protection balances available."
+          />
+        </div>
+      )}
+      <Card>
+        <div className="section-heading">
+          <div>
+            <span className="label">Reserve information</span>
+            <h2>Risk parameters</h2>
+          </div>
+        </div>
+        {data.position.reserves.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>Collateral enabled</th>
+                  <th>Liquidation threshold</th>
+                  <th>Supplied value</th>
+                  <th>Debt value</th>
+                  <th>Wallet value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.position.reserves.map((row) => (
+                  <tr key={row.asset}>
+                    <td>
+                      <b>{row.symbol}</b>
+                      <small>{shortAddress(row.asset)}</small>
+                    </td>
+                    <td>
+                      {row.collateralEnabled ? (
+                        <StatusPill tone="good">Enabled</StatusPill>
+                      ) : (
+                        <StatusPill>Disabled</StatusPill>
+                      )}
+                    </td>
+                    <td>{formatPercentageRatio(row.liquidationThreshold)}</td>
+                    <td>{formatCompactUsd(row.suppliedUsd)}</td>
+                    <td>{formatCompactUsd(row.debtUsd)}</td>
+                    <td>{formatCompactUsd(row.walletBalanceUsd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="empty-row">No reserve data is stored in the latest snapshot.</p>
+        )}
+      </Card>
+    </div>
+  );
 }
-function AssetTable({ title, rows, columns, empty }: { title: string; rows: Awaited<ReturnType<typeof loadProductData>>["position"]["reserves"]; columns: "supplied" | "debt" | "wallet"; empty: string }) { return <Card><div className="section-heading"><h2>{title}</h2><StatusPill tone="blue">{rows.length} ASSETS</StatusPill></div>{rows.length ? <div className="asset-list">{rows.map(row => <div key={row.asset}><span className="asset-token">{row.symbol.slice(0,2)}</span><div><b>{row.symbol}</b><small>{row.collateralEnabled && columns === "supplied" ? "Used as collateral" : "Aave V3 reserve"}</small></div><div><b>{columns === "supplied" ? row.suppliedBalance : columns === "debt" ? row.debtBalance : row.walletBalance}</b><small>{formatCompactUsd(columns === "supplied" ? row.suppliedUsd : columns === "debt" ? row.debtUsd : row.walletBalanceUsd)}</small></div></div>)}</div> : <p className="empty-row">{empty}</p>}</Card>; }
+function AssetTable({
+  title,
+  rows,
+  columns,
+  empty,
+}: {
+  title: string;
+  rows: Awaited<ReturnType<typeof loadProductData>>["position"]["reserves"];
+  columns: "supplied" | "debt" | "wallet";
+  empty: string;
+}) {
+  return (
+    <Card>
+      <div className="section-heading">
+        <h2>{title}</h2>
+        <StatusPill tone="blue">{rows.length} ASSETS</StatusPill>
+      </div>
+      {rows.length ? (
+        <div className="asset-list">
+          {rows.map((row) => (
+            <div key={row.asset}>
+              <span className="asset-token">{row.symbol.slice(0, 2)}</span>
+              <div>
+                <b>{row.symbol}</b>
+                <small>
+                  {row.collateralEnabled && columns === "supplied"
+                    ? "Used as collateral"
+                    : "Aave V3 reserve"}
+                </small>
+              </div>
+              <div>
+                <b>
+                  {columns === "supplied"
+                    ? row.suppliedBalance
+                    : columns === "debt"
+                      ? row.debtBalance
+                      : row.walletBalance}
+                </b>
+                <small>
+                  {formatCompactUsd(
+                    columns === "supplied"
+                      ? row.suppliedUsd
+                      : columns === "debt"
+                        ? row.debtUsd
+                        : row.walletBalanceUsd,
+                  )}
+                </small>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="empty-row">{empty}</p>
+      )}
+    </Card>
+  );
+}

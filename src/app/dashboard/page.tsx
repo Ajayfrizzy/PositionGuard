@@ -1,26 +1,333 @@
 import Link from "next/link";
-import { ArrowLink, Card, ConnectionDot, EmptyState, Metric, PageHeader, StatusPill } from "@/components/ui";
+import {
+  ArrowLink,
+  Card,
+  ConnectionDot,
+  EmptyState,
+  Metric,
+  PageHeader,
+  StatusPill,
+} from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { loadCurrentProductData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber, shortAddress, timeAgo } from "@/lib/product/format";
 import { deterministicExplanation } from "@/lib/agent/explanation";
 
 export const dynamic = "force-dynamic";
-const riskTone = (risk: string) => risk === "SAFE" ? "good" : risk === "WATCH" ? "warn" : "danger";
+const riskTone = (risk: string) =>
+  risk === "SAFE" ? "good" : risk === "WATCH" ? "warn" : "danger";
 export default async function DashboardPage() {
-  const data = await loadCurrentProductData(); const candidate = data.riskLevel === "SAFE" ? null : data.selectedCandidate; const execution = data.latestExecution; const explanation = deterministicExplanation({ healthFactor: data.position.healthFactor, target: data.policy.targetHealthFactor, riskLevel: data.riskLevel, candidates: data.candidates, selected: candidate, protectionEnabled: data.policy.enabled });
-  return <div className="page"><div className="testnet-banner" role="note" aria-label="Testnet warning"><span>TESTNET</span><p>Base Sepolia assets have no real-world value.</p><b>Chain ID {data.network.chainId}</b></div>
-    <PageHeader eyebrow="COMMAND CENTER" title="Position Overview" description="Live risk assessment and protection status."><Link className="button secondary" href="/position"><Icon name="activity"/>View live position</Link></PageHeader>
-    <div className="explanation-card"><span className="eyebrow">WHY THIS MATTERS</span><h2>{data.riskLevel === "SAFE" ? "Your safety target is currently met" : "Your position needs attention"}</h2><p>{explanation.whyRiskChanged}</p><p>{explanation.whatHappensNext}</p><details><summary>Show technical details</summary><p>{explanation.policySummary}</p></details></div>
-    {data.error && <div className="alert warning"><b>Live data unavailable</b><span>{data.error}</span></div>}
-    <div className="overview-grid">
-      <Card className="health-card"><div className="health-top"><div><span className="label">Health factor</span><div className="health-value">{formatNumber(data.position.healthFactor, 2)}</div></div><StatusPill tone={riskTone(data.riskLevel)}><span className="pulse-dot"/>{data.riskLevel} RISK</StatusPill></div><div className="hf-track"><i style={{ width: `${Math.min(100, Math.max(3, ((Number(data.position.healthFactor ?? 1) - 1) / .8) * 100))}%` }}/><span className="target-marker" style={{ left: `${Math.min(96, Math.max(4, ((Number(data.policy.targetHealthFactor) - 1) / .8) * 100))}%` }}/></div><div className="track-labels"><span>1.00 liquidation</span><b>Target {formatNumber(data.policy.targetHealthFactor, 2)}</b><span>1.80 safe</span></div><p className="health-copy">{data.riskLevel === "SAFE" ? "Your position currently meets the configured safety target." : "Your position is below the configured safety target. PositionGuard has evaluated defensive actions."}</p><div className="health-meta"><span><i className="live-dot"/>Last assessed {data.position.capturedAt ? timeAgo(data.position.capturedAt) : "never"}</span><Link href="/position">Position details <Icon name="arrow"/></Link></div></Card>
-      <Card className="protection-card"><div className="card-heading"><div className="round-icon"><Icon name="shield"/></div><div><span className="label">Protection status</span><h2>{data.policy.enabled ? "Active & monitoring" : "Protection disabled"}</h2></div><StatusPill tone={data.policy.enabled ? "good" : "neutral"}>{data.policy.enabled ? "ENABLED" : "DISABLED"}</StatusPill></div><div className="protection-list"><div><span>Protection mode</span><b>{data.policy.executionMode === "MONITOR_ONLY" ? "MONITOR ONLY" : data.policy.executionMode === "REQUIRE_APPROVAL" ? "ASK BEFORE ACTING" : "PROTECT AUTOMATICALLY"}</b></div><div><span>Protection monitoring</span><b>{data.monitoring.active ? "ACTIVE" : "INACTIVE"}</b></div><div><span>Worker status</span><b>{data.monitoring.status ?? "OFFLINE"}</b></div><div><span>Last check</span><b>{data.monitoring.lastCheck ? timeAgo(data.monitoring.lastCheck) : "Never"}</b></div><div><span>Funding readiness</span><b>{data.fundingReadiness === "READY" ? "READY" : data.fundingReadiness ? "ATTENTION NEEDED" : "NOT CHECKED"}</b></div><div><span>Configured target</span><b>{formatNumber(data.policy.targetHealthFactor, 2)} HF</b></div><div><span>Automatic limit</span><b>{formatCompactUsd(data.policy.maxAutonomousAmountUsd)}</b></div></div><ArrowLink href="/settings">View protection policy</ArrowLink></Card>
+  const data = await loadCurrentProductData();
+  const candidate = data.riskLevel === "SAFE" ? null : data.selectedCandidate;
+  const execution = data.latestExecution;
+  const explanation = deterministicExplanation({
+    healthFactor: data.position.healthFactor,
+    target: data.policy.targetHealthFactor,
+    riskLevel: data.riskLevel,
+    candidates: data.candidates,
+    selected: candidate,
+    protectionEnabled: data.policy.enabled,
+  });
+  return (
+    <div className="page">
+      <div className="testnet-banner" role="note" aria-label="Testnet warning">
+        <span>TESTNET</span>
+        <p>Base Sepolia assets have no real-world value.</p>
+        <b>Chain ID {data.network.chainId}</b>
+      </div>
+      <PageHeader
+        eyebrow="COMMAND CENTER"
+        title="Position Overview"
+        description="Live risk assessment and protection status."
+      >
+        <Link className="button secondary" href="/position">
+          <Icon name="activity" />
+          View live position
+        </Link>
+      </PageHeader>
+      <div className="explanation-card">
+        <span className="eyebrow">WHY THIS MATTERS</span>
+        <h2>
+          {data.riskLevel === "SAFE"
+            ? "Your safety target is currently met"
+            : "Your position needs attention"}
+        </h2>
+        <p>{explanation.whyRiskChanged}</p>
+        <p>{explanation.whatHappensNext}</p>
+        <details>
+          <summary>Show technical details</summary>
+          <p>{explanation.policySummary}</p>
+        </details>
+      </div>
+      {data.error && (
+        <div className="alert warning">
+          <b>Live data unavailable</b>
+          <span>{data.error}</span>
+        </div>
+      )}
+      <div className="overview-grid">
+        <Card className="health-card">
+          <div className="health-top">
+            <div>
+              <span className="label">Health factor</span>
+              <div className="health-value">{formatNumber(data.position.healthFactor, 2)}</div>
+            </div>
+            <StatusPill tone={riskTone(data.riskLevel)}>
+              <span className="pulse-dot" />
+              {data.riskLevel} RISK
+            </StatusPill>
+          </div>
+          <div className="hf-track">
+            <i
+              style={{
+                width: `${Math.min(100, Math.max(3, ((Number(data.position.healthFactor ?? 1) - 1) / 0.8) * 100))}%`,
+              }}
+            />
+            <span
+              className="target-marker"
+              style={{
+                left: `${Math.min(96, Math.max(4, ((Number(data.policy.targetHealthFactor) - 1) / 0.8) * 100))}%`,
+              }}
+            />
+          </div>
+          <div className="track-labels">
+            <span>1.00 liquidation</span>
+            <b>Target {formatNumber(data.policy.targetHealthFactor, 2)}</b>
+            <span>1.80 safe</span>
+          </div>
+          <p className="health-copy">
+            {data.riskLevel === "SAFE"
+              ? "Your position currently meets the configured safety target."
+              : "Your position is below the configured safety target. PositionGuard has evaluated defensive actions."}
+          </p>
+          <div className="health-meta">
+            <span>
+              <i className="live-dot" />
+              Last assessed {data.position.capturedAt ? timeAgo(data.position.capturedAt) : "never"}
+            </span>
+            <Link href="/position">
+              Position details <Icon name="arrow" />
+            </Link>
+          </div>
+        </Card>
+        <Card className="protection-card">
+          <div className="card-heading">
+            <div className="round-icon">
+              <Icon name="shield" />
+            </div>
+            <div>
+              <span className="label">Protection status</span>
+              <h2>{data.policy.enabled ? "Active & monitoring" : "Protection disabled"}</h2>
+            </div>
+            <StatusPill tone={data.policy.enabled ? "good" : "neutral"}>
+              {data.policy.enabled ? "ENABLED" : "DISABLED"}
+            </StatusPill>
+          </div>
+          <div className="protection-list">
+            <div>
+              <span>Protection mode</span>
+              <b>
+                {data.policy.executionMode === "MONITOR_ONLY"
+                  ? "MONITOR ONLY"
+                  : data.policy.executionMode === "REQUIRE_APPROVAL"
+                    ? "ASK BEFORE ACTING"
+                    : "PROTECT AUTOMATICALLY"}
+              </b>
+            </div>
+            <div>
+              <span>Protection monitoring</span>
+              <b>{data.monitoring.active ? "ACTIVE" : "INACTIVE"}</b>
+            </div>
+            <div>
+              <span>Worker status</span>
+              <b>{data.monitoring.status ?? "OFFLINE"}</b>
+            </div>
+            <div>
+              <span>Last check</span>
+              <b>{data.monitoring.lastCheck ? timeAgo(data.monitoring.lastCheck) : "Never"}</b>
+            </div>
+            <div>
+              <span>Funding readiness</span>
+              <b>
+                {data.fundingReadiness === "READY"
+                  ? "READY"
+                  : data.fundingReadiness
+                    ? "ATTENTION NEEDED"
+                    : "NOT CHECKED"}
+              </b>
+            </div>
+            <div>
+              <span>Configured target</span>
+              <b>{formatNumber(data.policy.targetHealthFactor, 2)} HF</b>
+            </div>
+            <div>
+              <span>Automatic limit</span>
+              <b>{formatCompactUsd(data.policy.maxAutonomousAmountUsd)}</b>
+            </div>
+          </div>
+          <ArrowLink href="/settings">View protection policy</ArrowLink>
+        </Card>
+      </div>
+      {candidate ? (
+        <Card className="recommendation">
+          <div className="recommendation-accent" />
+          <div className="recommendation-copy">
+            <p className="eyebrow">POSITIONGUARD RECOMMENDS</p>
+            <h2>
+              {candidate.type === "REPAY_DEBT" ? "Repay" : "Supply"}{" "}
+              <span>
+                {candidate.tokenAmount ?? candidate.amount}{" "}
+                {candidate.assetSymbol ?? candidate.asset}
+              </span>
+            </h2>
+            <p>
+              Smallest policy-compliant action expected to restore your configured safety target.
+            </p>
+            <div className="mei-badge">
+              <Icon name="check" />
+              Minimum Effective Intervention
+            </div>
+          </div>
+          <div className="projection">
+            <span>Projected health factor</span>
+            <div>
+              <b>{formatNumber(data.position.healthFactor, 2)}</b>
+              <span className="transition-arrow" aria-label="improves to">
+                →
+              </span>
+              <strong>{formatNumber(candidate.expectedHealthFactor, 2)}</strong>
+            </div>
+            <small>Target {formatNumber(data.policy.targetHealthFactor, 2)}</small>
+          </div>
+          <div className="recommendation-actions">
+            <Link className="button secondary" href="/protection">
+              View analysis
+            </Link>
+            <Link className="button primary" href="/protection?execute=1">
+              <Icon name="shield" />
+              Protect position
+            </Link>
+          </div>
+        </Card>
+      ) : (
+        <Card>
+          <EmptyState title="No intervention recommended">
+            {data.position.capturedAt
+              ? "The deterministic engine has no current policy-compliant intervention to show."
+              : "Capture a live position to begin deterministic protection analysis."}
+          </EmptyState>
+        </Card>
+      )}
+      <div className="metric-grid">
+        <Metric
+          label="Total collateral"
+          value={formatCompactUsd(data.position.totalCollateralUsd)}
+          detail="Across Aave V3"
+        />
+        <Metric
+          label="Total debt"
+          value={formatCompactUsd(data.position.totalDebtUsd)}
+          detail="Current borrowed value"
+        />
+        <Metric
+          label="Available borrow"
+          value={formatCompactUsd(data.position.availableBorrowsUsd)}
+          detail="At current collateral"
+        />
+        <Metric
+          label="Protection balances"
+          value={formatCompactUsd(
+            data.position.reserves.reduce((sum, item) => sum + Number(item.walletBalanceUsd), 0),
+          )}
+          detail={`${data.position.reserves.filter((r) => Number(r.walletBalance) > 0).length} available assets`}
+        />
+      </div>
+      <div className="dashboard-bottom">
+        <Card>
+          <div className="section-heading">
+            <div>
+              <span className="label">Latest protection event</span>
+              <h2>
+                {execution
+                  ? execution.status === "CONFIRMED"
+                    ? "Position successfully protected"
+                    : `Execution ${execution.status.toLowerCase()}`
+                  : "No protection execution yet"}
+              </h2>
+            </div>
+            {execution && (
+              <StatusPill tone={execution.status === "CONFIRMED" ? "good" : "neutral"}>
+                {execution.status}
+              </StatusPill>
+            )}
+          </div>
+          {execution ? (
+            <div className="event-summary">
+              <div className="event-icon">
+                <Icon name="check" />
+              </div>
+              <div>
+                <p>
+                  {execution.action === "REPAY_DEBT" ? "Repaid" : "Supplied"}{" "}
+                  <b>
+                    {execution.displayAmount} {execution.asset}
+                  </b>
+                </p>
+                <small>
+                  {timeAgo(execution.completedAt ?? execution.createdAt)} · KeeperHub{" "}
+                  {execution.keeperHubExecutionId ? "verified" : "pending"}
+                </small>
+              </div>
+              <div className="hf-change">
+                <span>HF</span>
+                <b>
+                  {formatNumber(execution.healthFactorBefore, 2)} →{" "}
+                  {formatNumber(execution.healthFactorAfter, 2)}
+                </b>
+              </div>
+            </div>
+          ) : (
+            <div className="empty-row">Confirmed executions are rendered from the database.</div>
+          )}
+          <ArrowLink href="/activity">View full audit trail</ArrowLink>
+        </Card>
+        <Card>
+          <div className="section-heading">
+            <div>
+              <span className="label">Integration status</span>
+              <h2>Demo Infrastructure</h2>
+            </div>
+            <span className="status-timestamp">Server verified</span>
+          </div>
+          <div className="connections">
+            {[
+              ["RPC", data.rpc],
+              ["Aave", data.aave],
+              ["Database", data.database],
+              ["KeeperHub auth", data.keeperHub.authenticated],
+              ["Sender pin", data.keeperHub.senderVerified],
+              ["Protection policy", data.policy.enabled ? "connected" : "disconnected"],
+            ].map(([label, state]) => (
+              <div key={label}>
+                <ConnectionDot state={state as "connected" | "disconnected" | "unknown"} />
+                <span>{label}</span>
+                <b>
+                  {state === "connected" ? "Ready" : state === "unknown" ? "Unknown" : "Attention"}
+                </b>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+      <footer className="page-footer">
+        <span>
+          <span className="live-dot" />
+          Protected wallet
+        </span>
+        <code title={data.position.wallet ?? ""}>{shortAddress(data.position.wallet)}</code>
+        <span>Network</span>
+        <b>{data.network.name}</b>
+      </footer>
     </div>
-    {candidate ? <Card className="recommendation"><div className="recommendation-accent"/><div className="recommendation-copy"><p className="eyebrow">POSITIONGUARD RECOMMENDS</p><h2>{candidate.type === "REPAY_DEBT" ? "Repay" : "Supply"} <span>{candidate.tokenAmount ?? candidate.amount} {candidate.assetSymbol ?? candidate.asset}</span></h2><p>Smallest policy-compliant action expected to restore your configured safety target.</p><div className="mei-badge"><Icon name="check"/>Minimum Effective Intervention</div></div><div className="projection"><span>Projected health factor</span><div><b>{formatNumber(data.position.healthFactor, 2)}</b><span className="transition-arrow" aria-label="improves to">→</span><strong>{formatNumber(candidate.expectedHealthFactor, 2)}</strong></div><small>Target {formatNumber(data.policy.targetHealthFactor, 2)}</small></div><div className="recommendation-actions"><Link className="button secondary" href="/protection">View analysis</Link><Link className="button primary" href="/protection?execute=1"><Icon name="shield"/>Protect position</Link></div></Card> : <Card><EmptyState title="No intervention recommended">{data.position.capturedAt ? "The deterministic engine has no current policy-compliant intervention to show." : "Capture a live position to begin deterministic protection analysis."}</EmptyState></Card>}
-    <div className="metric-grid"><Metric label="Total collateral" value={formatCompactUsd(data.position.totalCollateralUsd)} detail="Across Aave V3"/><Metric label="Total debt" value={formatCompactUsd(data.position.totalDebtUsd)} detail="Current borrowed value"/><Metric label="Available borrow" value={formatCompactUsd(data.position.availableBorrowsUsd)} detail="At current collateral"/><Metric label="Protection balances" value={formatCompactUsd(data.position.reserves.reduce((sum, item) => sum + Number(item.walletBalanceUsd), 0))} detail={`${data.position.reserves.filter(r => Number(r.walletBalance) > 0).length} available assets`}/></div>
-    <div className="dashboard-bottom"><Card><div className="section-heading"><div><span className="label">Latest protection event</span><h2>{execution ? (execution.status === "CONFIRMED" ? "Position successfully protected" : `Execution ${execution.status.toLowerCase()}`) : "No protection execution yet"}</h2></div>{execution && <StatusPill tone={execution.status === "CONFIRMED" ? "good" : "neutral"}>{execution.status}</StatusPill>}</div>{execution ? <div className="event-summary"><div className="event-icon"><Icon name="check"/></div><div><p>{execution.action === "REPAY_DEBT" ? "Repaid" : "Supplied"} <b>{execution.displayAmount} {execution.asset}</b></p><small>{timeAgo(execution.completedAt ?? execution.createdAt)} · KeeperHub {execution.keeperHubExecutionId ? "verified" : "pending"}</small></div><div className="hf-change"><span>HF</span><b>{formatNumber(execution.healthFactorBefore, 2)} → {formatNumber(execution.healthFactorAfter, 2)}</b></div></div> : <div className="empty-row">Confirmed executions are rendered from the database.</div>}<ArrowLink href="/activity">View full audit trail</ArrowLink></Card>
-      <Card><div className="section-heading"><div><span className="label">Integration status</span><h2>Demo Infrastructure</h2></div><span className="status-timestamp">Server verified</span></div><div className="connections">{[["RPC", data.rpc], ["Aave", data.aave], ["Database", data.database], ["KeeperHub auth", data.keeperHub.authenticated], ["Sender pin", data.keeperHub.senderVerified], ["Protection policy", data.policy.enabled ? "connected" : "disconnected"]] .map(([label, state]) => <div key={label}><ConnectionDot state={state as "connected" | "disconnected" | "unknown"}/><span>{label}</span><b>{state === "connected" ? "Ready" : state === "unknown" ? "Unknown" : "Attention"}</b></div>)}</div></Card></div>
-    <footer className="page-footer"><span><span className="live-dot"/>Protected wallet</span><code title={data.position.wallet ?? ""}>{shortAddress(data.position.wallet)}</code><span>Network</span><b>{data.network.name}</b></footer>
-  </div>;
+  );
 }

@@ -6,14 +6,14 @@ Checked 2026-09-08. A complete testnet demo is technically feasible using Aave V
 
 [Aave's deployment list](https://aave.com/help/aave-101/accessing-aave) explicitly includes Base Sepolia V3. The [official address book](https://github.com/aave-dao/aave-address-book/blob/main/src/AaveV3BaseSepolia.sol) provides:
 
-| Component | Address |
-| --- | --- |
-| Pool | 0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27 |
-| Addresses Provider | 0xE4C23309117Aa30342BFaae6c95c6478e0A4Ad00 |
-| Data Provider | 0xBc9f5b7E248451CdD7cA54e717a2BFe1F32b566b |
-| Oracle | 0x943b0dE18d4abf4eF02A85912F8fc07684C141dF |
+| Component             | Address                                    |
+| --------------------- | ------------------------------------------ |
+| Pool                  | 0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27 |
+| Addresses Provider    | 0xE4C23309117Aa30342BFaae6c95c6478e0A4Ad00 |
+| Data Provider         | 0xBc9f5b7E248451CdD7cA54e717a2BFe1F32b566b |
+| Oracle                | 0x943b0dE18d4abf4eF02A85912F8fc07684C141dF |
 | Test USDC, 6 decimals | 0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f |
-| WETH, 18 decimals | 0x4200000000000000000000000000000000000006 |
+| WETH, 18 decimals     | 0x4200000000000000000000000000000000000006 |
 
 Live RPC at https://sepolia.base.org returned chain 84532 and block 46557547 at the beginning of the probe. Reads spanned subsequent blocks; these are a feasibility snapshot, not one atomic position snapshot. Pool/Data Provider code exists. getReservesList returned USDC, USDT, WBTC, WETH, cbETH and LINK.
 
@@ -25,13 +25,13 @@ USDC and WETH both reported active=true, frozen=false, paused=false, collateral 
 
 All investigation POSTs used strict boolean simulate=true, native value zero and the official Pool target. No simulation flag was removed. Results:
 
-| Probe | Actual result |
-| --- | --- |
-| getReservesList via contract-call | HTTP 200, returned the same six reserves; view-call response is result, not a successful write-simulation receipt |
-| supply of 1 raw USDC unit | Simulated revert InvalidAmount |
-| supply of 1 whole test USDC | Simulated revert: ERC20 transfer amount exceeds balance |
+| Probe                                | Actual result                                                                                                                                                                      |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| getReservesList via contract-call    | HTTP 200, returned the same six reserves; view-call response is result, not a successful write-simulation receipt                                                                  |
+| supply of 1 raw USDC unit            | Simulated revert InvalidAmount                                                                                                                                                     |
+| supply of 1 whole test USDC          | Simulated revert: ERC20 transfer amount exceeds balance                                                                                                                            |
 | borrow on behalf of protected wallet | Simulated revert, custom error; no successful borrow claimed. Creating B's debt through K would additionally require borrowing delegation; create the demo position from B instead |
-| repay on behalf of protected wallet | Simulated revert selector 0xf0788fb2, matching NoDebtOfSelectedType() in official Aave Errors.sol |
+| repay on behalf of protected wallet  | Simulated revert selector 0xf0788fb2, matching NoDebtOfSelectedType() in official Aave Errors.sol                                                                                  |
 
 Simulations reported sender 0xa7462e9f08c56053c87f3e2a35af8dbea4786531 and the expected testnet Pool. The previously authenticated key disclosed mcp:read, mcp:write and mcp:admin. These results establish real chain/contract simulation routing. Documented broadcast support exists, but successful funded simulation, actual broadcast routing, mining and receipt verification remain unproven. The documented EOA-versus-Safe simulation limitation still applies.
 

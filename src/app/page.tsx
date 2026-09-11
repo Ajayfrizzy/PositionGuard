@@ -1,2 +1,7 @@
 import { redirect } from "next/navigation";
-export default function Home() { redirect("/onboarding"); }
+import { getServerSession } from "@/lib/security/session-context";
+
+export default async function Home() {
+  const session = await getServerSession();
+  redirect(session ? "/dashboard" : "/onboarding");
+}

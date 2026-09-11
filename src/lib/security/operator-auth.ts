@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-export function authenticateOperator(request: Request): "authorized" | "unconfigured" | "unauthorized" {
+export function authenticateOperator(
+  request: Request,
+): "authorized" | "unconfigured" | "unauthorized" {
   const token = process.env.POSITIONGUARD_DEV_TOKEN;
   if (!token || token.length < 32) return "unconfigured";
   const header = request.headers.get("authorization");

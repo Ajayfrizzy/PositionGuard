@@ -6,7 +6,8 @@ export const poolAbi = parseAbi([
   "function getUserEMode(address user) view returns (uint256)",
 ]);
 export const providerAbi = parseAbi([
-  "function getPool() view returns (address)", "function getPriceOracle() view returns (address)",
+  "function getPool() view returns (address)",
+  "function getPriceOracle() view returns (address)",
   "function getPoolDataProvider() view returns (address)",
 ]);
 export const dataProviderAbi = parseAbi([
@@ -25,5 +26,6 @@ export const oracleAbi = parseAbi([
 ]);
 export const tokenAbi = parseAbi([
   "function balanceOf(address owner) view returns (uint256)",
-  "function symbol() view returns (string)", "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
 ]);

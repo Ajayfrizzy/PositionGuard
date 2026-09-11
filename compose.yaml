@@ -12,7 +12,13 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -28,7 +34,13 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "node", "-e", "const f=process.env.WORKER_HEARTBEAT_PATH;require('fs').stat(f,(e,s)=>{if(e||Date.now()-s.mtimeMs>300000)process.exit(1)})"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const f=process.env.WORKER_HEARTBEAT_PATH;require('fs').stat(f,(e,s)=>{if(e||Date.now()-s.mtimeMs>300000)process.exit(1)})",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3

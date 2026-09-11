@@ -4,4 +4,53 @@ import { loadCurrentProductData as loadProductData } from "@/lib/product/current
 import { createScenarioAuthorization } from "@/lib/stress/scenario-auth";
 import { Icon } from "@/components/icons";
 export const dynamic = "force-dynamic";
-export default async function ScenarioPage() { const data = await loadProductData(); const assets = [...new Set(data.position.reserves.filter(item => item.collateralEnabled).map(item => item.symbol))]; let scenarioAuthorization: string | null = null; try { if (data.protectedAccountId) scenarioAuthorization = createScenarioAuthorization({ protectedAccountId: data.protectedAccountId, chainId: data.network.chainId }); } catch {} return <div className="page scenario-page"><PageHeader eyebrow="POSITION SCENARIO" title="Stress Test Your Position" description="See how PositionGuard would react if the market moved against your Aave position."><StatusPill tone="blue">SIMULATION ONLY</StatusPill></PageHeader><section className="scenario-intro"><div className="round-icon"><Icon name="activity"/></div><div><h2>Explore a market downturn safely</h2><p>Choose a collateral asset and simulate a price drop. PositionGuard will estimate the resulting health factor and the smallest protection action needed to restore your configured safety target.</p></div><div className="simulation-promise"><Icon name="shield"/><span><b>No funds move</b>No blockchain transaction is submitted.</span></div></section><StressForm scenarioAuthorization={scenarioAuthorization} assets={assets.length ? assets : ["WETH"]}/></div>; }
+export default async function ScenarioPage() {
+  const data = await loadProductData();
+  const assets = [
+    ...new Set(
+      data.position.reserves.filter((item) => item.collateralEnabled).map((item) => item.symbol),
+    ),
+  ];
+  let scenarioAuthorization: string | null = null;
+  try {
+    if (data.protectedAccountId)
+      scenarioAuthorization = createScenarioAuthorization({
+        protectedAccountId: data.protectedAccountId,
+        chainId: data.network.chainId,
+      });
+  } catch {}
+  return (
+    <div className="page scenario-page">
+      <PageHeader
+        eyebrow="POSITION SCENARIO"
+        title="Stress Test Your Position"
+        description="See how PositionGuard would react if the market moved against your Aave position."
+      >
+        <StatusPill tone="blue">SIMULATION ONLY</StatusPill>
+      </PageHeader>
+      <section className="scenario-intro">
+        <div className="round-icon">
+          <Icon name="activity" />
+        </div>
+        <div>
+          <h2>Explore a market downturn safely</h2>
+          <p>
+            Choose a collateral asset and simulate a price drop. PositionGuard will estimate the
+            resulting health factor and the smallest protection action needed to restore your
+            configured safety target.
+          </p>
+        </div>
+        <div className="simulation-promise">
+          <Icon name="shield" />
+          <span>
+            <b>No funds move</b>No blockchain transaction is submitted.
+          </span>
+        </div>
+      </section>
+      <StressForm
+        scenarioAuthorization={scenarioAuthorization}
+        assets={assets.length ? assets : ["WETH"]}
+      />
+    </div>
+  );
+}

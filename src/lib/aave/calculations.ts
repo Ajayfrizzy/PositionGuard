@@ -8,7 +8,8 @@ export function uint(input: unknown): bigint {
   return result.data;
 }
 export function healthFactorFromWad(value: bigint, debt: bigint): string | null {
-  uint(value); uint(debt);
+  uint(value);
+  uint(debt);
   if (debt === 0n) {
     if (value !== maxUint256) throw new AaveReadError("POSITION_INCONSISTENT");
     return null;
@@ -21,6 +22,7 @@ export function baseUsd(value: bigint, baseUnit: bigint): string {
   return formatUnits(uint(value), 8);
 }
 export function tokenValueBase(amount: bigint, price: bigint, decimals: number): bigint {
-  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36 || price <= 0n) throw new AaveReadError("PRICE_NORMALIZATION_FAILED");
-  return uint(amount) * uint(price) / 10n ** BigInt(decimals);
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36 || price <= 0n)
+    throw new AaveReadError("PRICE_NORMALIZATION_FAILED");
+  return (uint(amount) * uint(price)) / 10n ** BigInt(decimals);
 }

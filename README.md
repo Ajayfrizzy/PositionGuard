@@ -101,21 +101,21 @@ Open `http://localhost:3000`; `/` redirects to `/dashboard`.
 
 ## Environment variables
 
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | Server-only PostgreSQL URL |
-| `BASE_SEPOLIA_RPC_URL` | Server-only testnet RPC |
-| `BASE_RPC_URL` | Optional Base mainnet RPC |
-| `POSITIONGUARD_DEFAULT_CHAIN_ID` | Defaults to `84532` |
-| `AAVE_WALLET_ADDRESS` | Server-configured protected wallet |
-| `POSITIONGUARD_DEV_TOKEN` | 32+ character operator authorization |
-| `KEEPERHUB_API_KEY` | Server-only KeeperHub credential |
-| `KEEPERHUB_BASE_URL` | Restricted official HTTPS origin |
-| `KEEPERHUB_EXECUTION_WALLET` | Expected sender pin |
-| `POSITIONGUARD_BROADCAST_TOKEN` | Separate 32+ character step-up authorization for broadcast |
-| `MONITOR_POLL_INTERVAL_MS` | Worker interval; clamped to at least 30 seconds |
-| `POSITIONGUARD_WEBHOOK_URL` | Optional persisted-notification webhook |
-| `POSITIONGUARD_WEBHOOK_SECRET` | Optional HMAC-SHA256 webhook signing secret |
+| Variable                         | Purpose                                                    |
+| -------------------------------- | ---------------------------------------------------------- |
+| `DATABASE_URL`                   | Server-only PostgreSQL URL                                 |
+| `BASE_SEPOLIA_RPC_URL`           | Server-only testnet RPC                                    |
+| `BASE_RPC_URL`                   | Optional Base mainnet RPC                                  |
+| `POSITIONGUARD_DEFAULT_CHAIN_ID` | Defaults to `84532`                                        |
+| `AAVE_WALLET_ADDRESS`            | Server-configured protected wallet                         |
+| `POSITIONGUARD_DEV_TOKEN`        | 32+ character operator authorization                       |
+| `KEEPERHUB_API_KEY`              | Server-only KeeperHub credential                           |
+| `KEEPERHUB_BASE_URL`             | Restricted official HTTPS origin                           |
+| `KEEPERHUB_EXECUTION_WALLET`     | Expected sender pin                                        |
+| `POSITIONGUARD_BROADCAST_TOKEN`  | Separate 32+ character step-up authorization for broadcast |
+| `MONITOR_POLL_INTERVAL_MS`       | Worker interval; clamped to at least 30 seconds            |
+| `POSITIONGUARD_WEBHOOK_URL`      | Optional persisted-notification webhook                    |
+| `POSITIONGUARD_WEBHOOK_SECRET`   | Optional HMAC-SHA256 webhook signing secret                |
 
 Never expose these through `NEXT_PUBLIC_` variables.
 

@@ -9,47 +9,207 @@ import { checkLimits } from "../../src/lib/policies/limits";
 import { units } from "../../src/lib/financial";
 import type { ProtectionPolicy, PolicyContext } from "../../src/lib/policies/types";
 import type { NormalizedPosition } from "../../src/lib/protection/types";
-const policy: ProtectionPolicy = { targetHealthFactor: "1.5", warningHealthFactor: "1.3", emergencyHealthFactor: "1.1", maxAutonomousAmountUsd: "500", maxDailyAutonomousAmountUsd: "1000", approvalRequiredAboveUsd: "400", allowRepay: true, allowAddCollateral: true, interventionCooldownMinutes: 30, enabled: true };
-const position: NormalizedPosition = { healthFactor: "1.2", totalCollateralUsd: "1500", totalDebtUsd: "1000", liquidationThreshold: "0.8", availableDebtAssetBalanceUsd: "500", availableCollateralAssetBalanceUsd: "500", debtAsset: "USDC", collateralAsset: "WETH" };
-const context: PolicyContext = { dailyAutonomousSpendUsd: "0", nowMs: 10_000_000, lastAutonomousExecutionAtMs: null };
+const policy: ProtectionPolicy = {
+  targetHealthFactor: "1.5",
+  warningHealthFactor: "1.3",
+  emergencyHealthFactor: "1.1",
+  maxAutonomousAmountUsd: "500",
+  maxDailyAutonomousAmountUsd: "1000",
+  approvalRequiredAboveUsd: "400",
+  allowRepay: true,
+  allowAddCollateral: true,
+  interventionCooldownMinutes: 30,
+  enabled: true,
+};
+const position: NormalizedPosition = {
+  healthFactor: "1.2",
+  totalCollateralUsd: "1500",
+  totalDebtUsd: "1000",
+  liquidationThreshold: "0.8",
+  availableDebtAssetBalanceUsd: "500",
+  availableCollateralAssetBalanceUsd: "500",
+  debtAsset: "USDC",
+  collateralAsset: "WETH",
+};
+const context: PolicyContext = {
+  dailyAutonomousSpendUsd: "0",
+  nowMs: 10_000_000,
+  lastAutonomousExecutionAtMs: null,
+};
 const run = (p = position, pol = policy, c = context) => evaluateProtection(p, pol, c);
 describe("risk and validation", () => {
-  it("safe position requires no action", () => expect(run({ ...position, totalDebtUsd: "800", healthFactor: "1.5" }).action).toBe("NO_ACTION"));
-  it.each([["1.5", "SAFE"], ["1.3", "WATCH"], ["1.2", "HIGH"], ["1.1", "HIGH"], ["1.099999", "CRITICAL"]])("HF %s is %s", (hf, risk) => expect(evaluateRisk(hf, policy)).toBe(risk));
-  it("uses custom policy boundaries", () => expect(evaluateRisk("1.4", { ...policy, warningHealthFactor: "1.45" })).toBe("HIGH"));
-  it.each([{ targetHealthFactor: "1.3" }, { warningHealthFactor: "1.1" }, { emergencyHealthFactor: "1" }, { maxAutonomousAmountUsd: "-1" }, { interventionCooldownMinutes: -1 }])("rejects invalid policy %j", patch => expect(() => validatePolicy({ ...policy, ...patch })).toThrow());
-  it("zero debt is safe", () => expect(run({ ...position, healthFactor: null, totalDebtUsd: "0" }).status).toBe("NO_ACTION"));
-  it.each([{ totalDebtUsd: "-1" }, { totalDebtUsd: NaN }, { liquidationThreshold: "0" }, { liquidationThreshold: "1.1" }, { totalDebtUsd: "1e3" }, { totalDebtUsd: "1.0000001" }, { healthFactor: "1.6" }, { healthFactor: null }])("rejects malformed or inconsistent input %j", patch => expect(() => evaluateProtection({ ...position, ...patch }, policy, context)).toThrow());
-  it("rejects missing context", () => expect(() => evaluateProtection(position, policy, {})).toThrow());
-  it("rejects future cooldown timestamps", () => expect(() => run(position, policy, { ...context, lastAutonomousExecutionAtMs: context.nowMs + 1 })).toThrow());
+  it("safe position requires no action", () =>
+    expect(run({ ...position, totalDebtUsd: "800", healthFactor: "1.5" }).action).toBe(
+      "NO_ACTION",
+    ));
+  it.each([
+    ["1.5", "SAFE"],
+    ["1.3", "WATCH"],
+    ["1.2", "HIGH"],
+    ["1.1", "HIGH"],
+    ["1.099999", "CRITICAL"],
+  ])("HF %s is %s", (hf, risk) => expect(evaluateRisk(hf, policy)).toBe(risk));
+  it("uses custom policy boundaries", () =>
+    expect(evaluateRisk("1.4", { ...policy, warningHealthFactor: "1.45" })).toBe("HIGH"));
+  it.each([
+    { targetHealthFactor: "1.3" },
+    { warningHealthFactor: "1.1" },
+    { emergencyHealthFactor: "1" },
+    { maxAutonomousAmountUsd: "-1" },
+    { interventionCooldownMinutes: -1 },
+  ])("rejects invalid policy %j", (patch) =>
+    expect(() => validatePolicy({ ...policy, ...patch })).toThrow(),
+  );
+  it("zero debt is safe", () =>
+    expect(run({ ...position, healthFactor: null, totalDebtUsd: "0" }).status).toBe("NO_ACTION"));
+  it.each([
+    { totalDebtUsd: "-1" },
+    { totalDebtUsd: NaN },
+    { liquidationThreshold: "0" },
+    { liquidationThreshold: "1.1" },
+    { totalDebtUsd: "1e3" },
+    { totalDebtUsd: "1.0000001" },
+    { healthFactor: "1.6" },
+    { healthFactor: null },
+  ])("rejects malformed or inconsistent input %j", (patch) =>
+    expect(() => evaluateProtection({ ...position, ...patch }, policy, context)).toThrow(),
+  );
+  it("rejects missing context", () =>
+    expect(() => evaluateProtection(position, policy, {})).toThrow());
+  it("rejects future cooldown timestamps", () =>
+    expect(() =>
+      run(position, policy, { ...context, lastAutonomousExecutionAtMs: context.nowMs + 1 }),
+    ).toThrow());
 });
 describe("outcome model", () => {
-  it("repay increases HF correctly", () => expect(estimateOutcome(position, "REPAY_DEBT", "200")).toBe("1.500000"));
-  it("collateral increases HF correctly", () => expect(estimateOutcome(position, "ADD_COLLATERAL", "375")).toBe("1.500000"));
-  it("full repayment has unbounded HF", () => expect(estimateOutcome(position, "REPAY_DEBT", "1000")).toBeNull());
-  it.each(["0", "1001", "-1"])("rejects impossible repayment %s", amount => expect(() => estimateOutcome(position, "REPAY_DEBT", amount)).toThrow());
+  it("repay increases HF correctly", () =>
+    expect(estimateOutcome(position, "REPAY_DEBT", "200")).toBe("1.500000"));
+  it("collateral increases HF correctly", () =>
+    expect(estimateOutcome(position, "ADD_COLLATERAL", "375")).toBe("1.500000"));
+  it("full repayment has unbounded HF", () =>
+    expect(estimateOutcome(position, "REPAY_DEBT", "1000")).toBeNull());
+  it.each(["0", "1001", "-1"])("rejects impossible repayment %s", (amount) =>
+    expect(() => estimateOutcome(position, "REPAY_DEBT", amount)).toThrow(),
+  );
 });
 describe("policy limits", () => {
-  it("rejects insufficient balance", () => expect(checkLimits("REPAY_DEBT", "501", position, policy, context)).toBe("INSUFFICIENT_BALANCE"));
-  it.each(["REPAY_DEBT", "ADD_COLLATERAL"] as const)("rejects disabled %s", type => expect(checkLimits(type, "200", position, { ...policy, allowRepay: false, allowAddCollateral: false }, context)).toBe("ACTION_DISABLED"));
-  it("blocks above autonomous cap", () => expect(checkLimits("REPAY_DEBT", "200", position, { ...policy, maxAutonomousAmountUsd: "199" }, context)).toBe("AUTONOMOUS_LIMIT"));
-  it("blocks daily overspend", () => expect(checkLimits("REPAY_DEBT", "200", position, policy, { ...context, dailyAutonomousSpendUsd: "801" })).toBe("DAILY_LIMIT"));
-  it("allows exact daily boundary", () => expect(checkLimits("REPAY_DEBT", "200", position, policy, { ...context, dailyAutonomousSpendUsd: "800" })).toBeNull());
-  it("cooldown blocks execution", () => expect(run(position, policy, { ...context, lastAutonomousExecutionAtMs: context.nowMs - 1 }).status).toBe("NO_SAFE_ACTION"));
-  it("cooldown expiry is inclusive", () => expect(run(position, policy, { ...context, lastAutonomousExecutionAtMs: context.nowMs - 1_800_000 }).status).toBe("READY"));
-  it("disabled policy cannot select", () => expect(run(position, { ...policy, enabled: false }).status).toBe("NO_SAFE_ACTION"));
+  it("rejects insufficient balance", () =>
+    expect(checkLimits("REPAY_DEBT", "501", position, policy, context)).toBe(
+      "INSUFFICIENT_BALANCE",
+    ));
+  it.each(["REPAY_DEBT", "ADD_COLLATERAL"] as const)("rejects disabled %s", (type) =>
+    expect(
+      checkLimits(
+        type,
+        "200",
+        position,
+        { ...policy, allowRepay: false, allowAddCollateral: false },
+        context,
+      ),
+    ).toBe("ACTION_DISABLED"),
+  );
+  it("blocks above autonomous cap", () =>
+    expect(
+      checkLimits(
+        "REPAY_DEBT",
+        "200",
+        position,
+        { ...policy, maxAutonomousAmountUsd: "199" },
+        context,
+      ),
+    ).toBe("AUTONOMOUS_LIMIT"));
+  it("blocks daily overspend", () =>
+    expect(
+      checkLimits("REPAY_DEBT", "200", position, policy, {
+        ...context,
+        dailyAutonomousSpendUsd: "801",
+      }),
+    ).toBe("DAILY_LIMIT"));
+  it("allows exact daily boundary", () =>
+    expect(
+      checkLimits("REPAY_DEBT", "200", position, policy, {
+        ...context,
+        dailyAutonomousSpendUsd: "800",
+      }),
+    ).toBeNull());
+  it("cooldown blocks execution", () =>
+    expect(
+      run(position, policy, { ...context, lastAutonomousExecutionAtMs: context.nowMs - 1 }).status,
+    ).toBe("NO_SAFE_ACTION"));
+  it("cooldown expiry is inclusive", () =>
+    expect(
+      run(position, policy, { ...context, lastAutonomousExecutionAtMs: context.nowMs - 1_800_000 })
+        .status,
+    ).toBe("READY"));
+  it("disabled policy cannot select", () =>
+    expect(run(position, { ...policy, enabled: false }).status).toBe("NO_SAFE_ACTION"));
 });
 describe("minimum effective intervention", () => {
-  it("generates bounded candidates for both actions", () => { const c = generateCandidates(position, policy, context); expect(c.length).toBeGreaterThan(4); expect(c.length).toBeLessThanOrEqual(16); expect(new Set(c.map(x => x.type)).size).toBe(2); });
-  it("selects exact minimum repayment", () => { const r = run(); expect(r.action).toBe("REPAY_DEBT"); expect(r.selectedCandidate?.amount).toBe("200.000000"); });
-  it("does not select larger valid repayments", () => { const r = run(); expect(r.candidates.some(c => c.type === "REPAY_DEBT" && c.valid && units(c.amount) > units("200"))).toBe(true); expect(r.selectedCandidate?.amount).toBe("200.000000"); });
-  it("rejects immediate predecessor below target", () => expect(run().candidates.find(c => c.type === "REPAY_DEBT" && c.amount === "199.999999")?.rejectionReason).toBe("BELOW_TARGET"));
-  it("selects collateral when repayment unavailable", () => { const r = run(position, { ...policy, allowRepay: false }); expect(r.action).toBe("ADD_COLLATERAL"); expect(r.selectedCandidate?.amount).toBe("375.000000"); });
-  it("requires manual approval above threshold", () => { const r = run(position, { ...policy, approvalRequiredAboveUsd: "199" }); expect(r.action).toBe("REQUIRE_APPROVAL"); expect(r.selectedCandidate?.amount).toBe("200.000000"); });
-  it("allows exact approval boundary autonomously", () => expect(run(position, { ...policy, approvalRequiredAboveUsd: "200" }).status).toBe("READY"));
-  it("reports no safe action with insufficient funding", () => expect(run({ ...position, availableDebtAssetBalanceUsd: "10", availableCollateralAssetBalanceUsd: "10" }).status).toBe("NO_SAFE_ACTION"));
-  it("evaluates WATCH positions below target", () => expect(run({ ...position, totalCollateralUsd: "1750", healthFactor: "1.4" }).status).toBe("READY"));
-  it("rounds minimum upward and proves predecessor insufficient", () => { const p = { ...position, totalCollateralUsd: "1501", healthFactor: "1.2008" }; const r = run(p); const amount = r.selectedCandidate!.amount; expect(amount).toBe("199.466667"); expect(estimateOutcome(p, "REPAY_DEBT", "199.466666")).toBe("1.499999"); });
-  it("ranks deterministically without mutating candidates", () => { const c = generateCandidates(position, policy, context); const copy = structuredClone(c); expect(rankCandidates([...c].reverse())).toEqual(rankCandidates(c)); expect(c).toEqual(copy); });
-  it("does not mutate any inputs", () => { const inputs = structuredClone({ position, policy, context }); run(); expect({ position, policy, context }).toEqual(inputs); });
+  it("generates bounded candidates for both actions", () => {
+    const c = generateCandidates(position, policy, context);
+    expect(c.length).toBeGreaterThan(4);
+    expect(c.length).toBeLessThanOrEqual(16);
+    expect(new Set(c.map((x) => x.type)).size).toBe(2);
+  });
+  it("selects exact minimum repayment", () => {
+    const r = run();
+    expect(r.action).toBe("REPAY_DEBT");
+    expect(r.selectedCandidate?.amount).toBe("200.000000");
+  });
+  it("does not select larger valid repayments", () => {
+    const r = run();
+    expect(
+      r.candidates.some(
+        (c) => c.type === "REPAY_DEBT" && c.valid && units(c.amount) > units("200"),
+      ),
+    ).toBe(true);
+    expect(r.selectedCandidate?.amount).toBe("200.000000");
+  });
+  it("rejects immediate predecessor below target", () =>
+    expect(
+      run().candidates.find((c) => c.type === "REPAY_DEBT" && c.amount === "199.999999")
+        ?.rejectionReason,
+    ).toBe("BELOW_TARGET"));
+  it("selects collateral when repayment unavailable", () => {
+    const r = run(position, { ...policy, allowRepay: false });
+    expect(r.action).toBe("ADD_COLLATERAL");
+    expect(r.selectedCandidate?.amount).toBe("375.000000");
+  });
+  it("requires manual approval above threshold", () => {
+    const r = run(position, { ...policy, approvalRequiredAboveUsd: "199" });
+    expect(r.action).toBe("REQUIRE_APPROVAL");
+    expect(r.selectedCandidate?.amount).toBe("200.000000");
+  });
+  it("allows exact approval boundary autonomously", () =>
+    expect(run(position, { ...policy, approvalRequiredAboveUsd: "200" }).status).toBe("READY"));
+  it("reports no safe action with insufficient funding", () =>
+    expect(
+      run({
+        ...position,
+        availableDebtAssetBalanceUsd: "10",
+        availableCollateralAssetBalanceUsd: "10",
+      }).status,
+    ).toBe("NO_SAFE_ACTION"));
+  it("evaluates WATCH positions below target", () =>
+    expect(run({ ...position, totalCollateralUsd: "1750", healthFactor: "1.4" }).status).toBe(
+      "READY",
+    ));
+  it("rounds minimum upward and proves predecessor insufficient", () => {
+    const p = { ...position, totalCollateralUsd: "1501", healthFactor: "1.2008" };
+    const r = run(p);
+    const amount = r.selectedCandidate!.amount;
+    expect(amount).toBe("199.466667");
+    expect(estimateOutcome(p, "REPAY_DEBT", "199.466666")).toBe("1.499999");
+  });
+  it("ranks deterministically without mutating candidates", () => {
+    const c = generateCandidates(position, policy, context);
+    const copy = structuredClone(c);
+    expect(rankCandidates([...c].reverse())).toEqual(rankCandidates(c));
+    expect(c).toEqual(copy);
+  });
+  it("does not mutate any inputs", () => {
+    const inputs = structuredClone({ position, policy, context });
+    run();
+    expect({ position, policy, context }).toEqual(inputs);
+  });
 });

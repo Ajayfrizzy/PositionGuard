@@ -2,18 +2,18 @@
 
 Checked on 2026-09-08. Configuration changed during verification; the results below describe the latest attempts, not earlier missing-variable checks. Secrets and connection URLs are omitted.
 
-| Check | Actual result |
-| --- | --- |
-| Configured Base RPC | Passed at block 51046417, chain 8453, timestamp 2026-09-08T15:43:04.480Z |
-| Aave contracts | Pool, Data Provider, provider links and USD base unit verified by verify:rpc |
-| ERC-20 reads | Native USDC decimals 6 and WETH decimals 18 verified, with reserve membership and token reads |
-| PostgreSQL migration | Attempted; failed. No successful migration application claimed |
-| PostgreSQL connectivity | pg returned ENOTFOUND outside the sandbox. DNS inspection found no IPv4 record (ENODATA), one IPv6 record; direct IPv6 TCP probe returned EHOSTUNREACH |
-| Tables and server create/read/delete | verify:db attempted and failed to connect; table existence and CRUD remain unverified |
-| Complete live Aave position | Passed at block 51046419: wallet 0x1cb9Fa3A90b826203408B9eA65be56Ac7e87ef46; collateral/debt/available borrow all zero, HF null, no supplied or borrowed reserves, no protection balances or analysis blockers |
-| KeeperHub authenticated reads | Passed. Organization wallet/profile agree on 0xa7462E9F08C56053c87F3E2a35Af8DBeA4786531. Unique matching key discloses mcp:read mcp:write mcp:admin; simulation and broadcast capabilities available |
-| Base KeeperHub catalog | Passed during authenticated verification: Base 8453 enabled, EVM, not testnet |
-| Transactions | None submitted, including approvals and zero-value self-transfers |
+| Check                                | Actual result                                                                                                                                                                                                  |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configured Base RPC                  | Passed at block 51046417, chain 8453, timestamp 2026-09-08T15:43:04.480Z                                                                                                                                       |
+| Aave contracts                       | Pool, Data Provider, provider links and USD base unit verified by verify:rpc                                                                                                                                   |
+| ERC-20 reads                         | Native USDC decimals 6 and WETH decimals 18 verified, with reserve membership and token reads                                                                                                                  |
+| PostgreSQL migration                 | Attempted; failed. No successful migration application claimed                                                                                                                                                 |
+| PostgreSQL connectivity              | pg returned ENOTFOUND outside the sandbox. DNS inspection found no IPv4 record (ENODATA), one IPv6 record; direct IPv6 TCP probe returned EHOSTUNREACH                                                         |
+| Tables and server create/read/delete | verify:db attempted and failed to connect; table existence and CRUD remain unverified                                                                                                                          |
+| Complete live Aave position          | Passed at block 51046419: wallet 0x1cb9Fa3A90b826203408B9eA65be56Ac7e87ef46; collateral/debt/available borrow all zero, HF null, no supplied or borrowed reserves, no protection balances or analysis blockers |
+| KeeperHub authenticated reads        | Passed. Organization wallet/profile agree on 0xa7462E9F08C56053c87F3E2a35Af8DBeA4786531. Unique matching key discloses mcp:read mcp:write mcp:admin; simulation and broadcast capabilities available           |
+| Base KeeperHub catalog               | Passed during authenticated verification: Base 8453 enabled, EVM, not testnet                                                                                                                                  |
+| Transactions                         | None submitted, including approvals and zero-value self-transfers                                                                                                                                              |
 
 ## Configuration requiring correction
 

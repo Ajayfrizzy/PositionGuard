@@ -33,9 +33,9 @@ Those quantities are read-only examples, not approvals or confirmed required dem
 
 Actual requirements must come from the live position and current oracle. For illustration only, suppose debt is $30, current HF is 1.30, target HF is 1.50, prices stay fixed, and eligible added collateral has LT 0.80:
 
-| Intervention | Estimated capital |
-| --- | --- |
-| Repayment | 30 × (1 - 1.30 / 1.50) = $4 |
+| Intervention   | Estimated capital                      |
+| -------------- | -------------------------------------- |
+| Repayment      | 30 × (1 - 1.30 / 1.50) = $4            |
 | Add collateral | (30 × 1.50 - 30 × 1.30) / 0.80 = $7.50 |
 
 A roughly 10-USDC funding balance would leave a buffer for this specific $4 repayment example **if the oracle values USDC at $1**. A $10–$15 collateral-value budget could cover the illustrative supply requirement; the WETH quantity must be calculated from the actual oracle price. These are planning examples, not minimum-deposit rules, present prices, gas quotes or guarantees. Interest, rounding, reserve caps, existing balances and policy limits can change the required amount. Set a small explicit policy budget before any Phase 3 execution.

@@ -26,7 +26,18 @@ export interface ProductPosition {
   blockNumber: string | null;
   blockTimestamp: string | null;
   capturedAt: string | null;
-  reserves: Array<{ asset: string; symbol: string; suppliedBalance: string; suppliedUsd: string; debtBalance: string; debtUsd: string; walletBalance: string; walletBalanceUsd: string; collateralEnabled: boolean; liquidationThreshold: string }>;
+  reserves: Array<{
+    asset: string;
+    symbol: string;
+    suppliedBalance: string;
+    suppliedUsd: string;
+    debtBalance: string;
+    debtUsd: string;
+    walletBalance: string;
+    walletBalanceUsd: string;
+    collateralEnabled: boolean;
+    liquidationThreshold: string;
+  }>;
 }
 export interface CandidateView extends CandidateAction {
   state: "selected" | "rejected" | "valid" | "approval";
@@ -51,7 +62,14 @@ export interface ExecutionView {
   createdAt: string;
   completedAt: string | null;
 }
-export interface AuditView { id: string; type: string; severity: "INFO" | "WARNING" | "ERROR"; message: string; createdAt: string; metadata: Record<string, unknown> }
+export interface AuditView {
+  id: string;
+  type: string;
+  severity: "INFO" | "WARNING" | "ERROR";
+  message: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
 export interface ProductData {
   protectedAccountId: string | null;
   database: ConnectionState;
@@ -67,7 +85,11 @@ export interface ProductData {
   executions: ExecutionView[];
   auditEvents: AuditView[];
   positionChangedAt: string | null;
-  keeperHub: { authenticated: ConnectionState; senderVerified: ConnectionState; sender: string | null };
+  keeperHub: {
+    authenticated: ConnectionState;
+    senderVerified: ConnectionState;
+    sender: string | null;
+  };
   rpc: ConnectionState;
   aave: ConnectionState;
   error: string | null;
@@ -75,8 +97,20 @@ export interface ProductData {
   fundingReadiness: string | null;
 }
 
-export function shouldShowProtectionAttention(input: { policyEnabled: boolean; riskLevel: RiskLevel; decisionIsCurrent: boolean; decisionStatus: string | null; hasActionableCandidate: boolean }) {
-  return input.policyEnabled && input.riskLevel !== "SAFE" && input.decisionIsCurrent && input.hasActionableCandidate && ["READY", "REQUIRE_APPROVAL"].includes(input.decisionStatus ?? "");
+export function shouldShowProtectionAttention(input: {
+  policyEnabled: boolean;
+  riskLevel: RiskLevel;
+  decisionIsCurrent: boolean;
+  decisionStatus: string | null;
+  hasActionableCandidate: boolean;
+}) {
+  return (
+    input.policyEnabled &&
+    input.riskLevel !== "SAFE" &&
+    input.decisionIsCurrent &&
+    input.hasActionableCandidate &&
+    ["READY", "REQUIRE_APPROVAL"].includes(input.decisionStatus ?? "")
+  );
 }
 
 const REASONS: Record<string, string> = {
@@ -90,12 +124,33 @@ const REASONS: Record<string, string> = {
   COOLDOWN: "The intervention cooldown is still active.",
   SUPPLY_CAP: "The reserve supply capacity would be exceeded.",
 };
-export function mapCandidates(candidates: CandidateAction[], selectedId: string | null): CandidateView[] {
-  return candidates.map(candidate => {
+export function mapCandidates(
+  candidates: CandidateAction[],
+  selectedId: string | null,
+): CandidateView[] {
+  return candidates.map((candidate) => {
     const selected = candidate.id === selectedId;
-    const state = selected ? "selected" : !candidate.valid ? "rejected" : candidate.requiresApproval ? "approval" : "valid";
-    const label = selected ? "Selected" : state === "rejected" ? "Rejected" : state === "approval" ? "Requires approval" : "Valid but not selected";
-    const reason = selected ? "Minimum Effective Intervention." : candidate.rejectionReason ? (REASONS[candidate.rejectionReason] ?? candidate.rejectionReason) : candidate.requiresApproval ? "Valid, but requires explicit approval." : "Reaches the target but uses more capital than the selected action.";
+    const state = selected
+      ? "selected"
+      : !candidate.valid
+        ? "rejected"
+        : candidate.requiresApproval
+          ? "approval"
+          : "valid";
+    const label = selected
+      ? "Selected"
+      : state === "rejected"
+        ? "Rejected"
+        : state === "approval"
+          ? "Requires approval"
+          : "Valid but not selected";
+    const reason = selected
+      ? "Minimum Effective Intervention."
+      : candidate.rejectionReason
+        ? (REASONS[candidate.rejectionReason] ?? candidate.rejectionReason)
+        : candidate.requiresApproval
+          ? "Valid, but requires explicit approval."
+          : "Reaches the target but uses more capital than the selected action.";
     return { ...candidate, state, label, reason };
   });
 }

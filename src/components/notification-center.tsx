@@ -1,12 +1,128 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StatusPill } from "./ui";
-type Notice = { id: string; type: string; title: string; message: string; readAt: string | null; webhookStatus: string; createdAt: string };
-const labels: Record<string, string> = { RISK_WATCH: "Risk increased", RISK_HIGH: "Risk increased", RISK_CRITICAL: "Risk increased", MEI_SELECTED: "Protection action selected", PROTECTION_BLOCKED: "Protection blocked", APPROVAL_REQUIRED: "Approval required", EXECUTION_STARTED: "Execution started", EXECUTION_CONFIRMED: "Execution successful", EXECUTION_FAILED: "Execution failed", POSITION_CHANGED: "Position changed" };
+type Notice = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  readAt: string | null;
+  webhookStatus: string;
+  createdAt: string;
+};
+const labels: Record<string, string> = {
+  RISK_WATCH: "Risk increased",
+  RISK_HIGH: "Risk increased",
+  RISK_CRITICAL: "Risk increased",
+  MEI_SELECTED: "Protection action selected",
+  PROTECTION_BLOCKED: "Protection blocked",
+  APPROVAL_REQUIRED: "Approval required",
+  EXECUTION_STARTED: "Execution started",
+  EXECUTION_CONFIRMED: "Execution successful",
+  EXECUTION_FAILED: "Execution failed",
+  POSITION_CHANGED: "Position changed",
+};
 export function NotificationCenter() {
-  const [notices, setNotices] = useState<Notice[]>([]); const [error, setError] = useState("");
-  async function load() { const response = await fetch("/api/notifications"); if (!response.ok) { setError("Connect and verify your wallet to view notifications."); return; } const body = await response.json() as { notifications: Notice[] }; setNotices(body.notifications); }
-  useEffect(() => { let active = true; fetch("/api/notifications").then(response => response.ok ? response.json() : Promise.reject()).then((body: { notifications: Notice[] }) => { if (active) setNotices(body.notifications); }).catch(() => { if (active) setError("Connect and verify your wallet to view notifications."); }); return () => { active = false; }; }, []);
-  async function mark(notificationId?: string) { await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(notificationId ? { notificationId } : { all: true }) }); await load(); }
-  return <section className="card notification-center"><div className="section-heading"><div><span className="label">Notification center</span><h2>Meaningful protection events</h2></div>{notices.some(item => !item.readAt) && <button className="button secondary" onClick={() => void mark()}>Mark all read</button>}</div>{error && <p className="form-status error">{error}</p>}{notices.length ? <div className="notification-list">{notices.map(notice => <article className={notice.readAt ? "read" : "unread"} key={notice.id}><span className="notification-dot"/><div><div><b>{labels[notice.type] ?? notice.title}</b><StatusPill tone={notice.type.includes("FAILED") || notice.type.includes("BLOCKED") ? "danger" : notice.type.includes("RISK") || notice.type === "APPROVAL_REQUIRED" ? "warn" : "good"}>{notice.readAt ? "READ" : "NEW"}</StatusPill></div><h3>{notice.title}</h3><p>{notice.message}</p><small>{new Date(notice.createdAt).toLocaleString()} · Delivery {notice.webhookStatus.toLowerCase()}</small></div>{!notice.readAt && <button onClick={() => void mark(notice.id)}>Mark read</button>}</article>)}</div> : <p className="empty-row">No notifications yet. Repetitive monitoring events are deduplicated automatically.</p>}</section>;
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [error, setError] = useState("");
+  async function load() {
+    const response = await fetch("/api/notifications");
+    if (!response.ok) {
+      setError(
+        response.status === 401
+          ? "Your session expired."
+          : "Notifications are temporarily unavailable.",
+      );
+      return;
+    }
+    const body = (await response.json()) as { notifications: Notice[] };
+    setError("");
+    setNotices(body.notifications);
+  }
+  useEffect(() => {
+    let active = true;
+    fetch("/api/notifications")
+      .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+      .then((body: { notifications: Notice[] }) => {
+        if (active) setNotices(body.notifications);
+      })
+      .catch((status: unknown) => {
+        if (active) {
+          setError(
+            status === 401 ? "Your session expired." : "Notifications are temporarily unavailable.",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  async function mark(notificationId?: string) {
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(notificationId ? { notificationId } : { all: true }),
+    });
+    await load();
+  }
+  return (
+    <section className="card notification-center">
+      <div className="section-heading">
+        <div>
+          <span className="label">Notification center</span>
+          <h2>Meaningful protection events</h2>
+        </div>
+        {notices.some((item) => !item.readAt) && (
+          <button className="button secondary" onClick={() => void mark()}>
+            Mark all read
+          </button>
+        )}
+      </div>
+      {error && (
+        <div className="session-expired">
+          <p className="form-status error">{error}</p>
+          <Link className="button primary" href="/onboarding">
+            Reconnect Wallet
+          </Link>
+        </div>
+      )}
+      {notices.length ? (
+        <div className="notification-list">
+          {notices.map((notice) => (
+            <article className={notice.readAt ? "read" : "unread"} key={notice.id}>
+              <span className="notification-dot" />
+              <div>
+                <div>
+                  <b>{labels[notice.type] ?? notice.title}</b>
+                  <StatusPill
+                    tone={
+                      notice.type.includes("FAILED") || notice.type.includes("BLOCKED")
+                        ? "danger"
+                        : notice.type.includes("RISK") || notice.type === "APPROVAL_REQUIRED"
+                          ? "warn"
+                          : "good"
+                    }
+                  >
+                    {notice.readAt ? "READ" : "NEW"}
+                  </StatusPill>
+                </div>
+                <h3>{notice.title}</h3>
+                <p>{notice.message}</p>
+                <small>
+                  {new Date(notice.createdAt).toLocaleString()} · Delivery{" "}
+                  {notice.webhookStatus.toLowerCase()}
+                </small>
+              </div>
+              {!notice.readAt && <button onClick={() => void mark(notice.id)}>Mark read</button>}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="empty-row">
+          No notifications yet. Repetitive monitoring events are deduplicated automatically.
+        </p>
+      )}
+    </section>
+  );
 }

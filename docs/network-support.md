@@ -10,12 +10,12 @@ Verified on 2026-09-08. PositionGuard supports **Base Sepolia (84532)** as its d
 - Contract references come from the [Aave DAO Base address book](https://github.com/aave-dao/aave-address-book/blob/main/src/AaveV3Base.sol). Values are centralized in src/lib/chains/config.ts.
 - Base Sepolia contracts and reserve tokens come from the official [Aave DAO Base Sepolia address book](https://github.com/aave-dao/aave-address-book/blob/main/src/AaveV3BaseSepolia.sol). KeeperHub's live catalog reported chain 84532 enabled as an EVM testnet; generic direct contract calls target the configured Pool rather than relying on an Aave plugin preset.
 
-| Contract | Address |
-| --- | --- |
-| Pool | 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5 |
-| Pool Data Provider | 0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A |
+| Contract                | Address                                    |
+| ----------------------- | ------------------------------------------ |
+| Pool                    | 0xA238Dd80C259a72e81d7e4664a9801593F98d1c5 |
+| Pool Data Provider      | 0x0F43731EB8d45A581f4a36DD74F5f358bc90C73A |
 | Pool Addresses Provider | 0xe20fCBdBfFC4Dd138cE8b2E6FBb6CB49777ad64D |
-| Oracle | 0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156 |
+| Oracle                  | 0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156 |
 
 Base is the requested primary chain and has documented protocol/plugin overlap. No gas-price claim or write readiness is inferred from this choice.
 
@@ -30,7 +30,6 @@ This runtime discovery supports complete read-only asset representation. It is n
 ## Live proof
 
 See the verification record in README.md for the actual RPC test outcome. Unit/integration tests use explicit contract fixtures and do not constitute live proof. No configured private RPC credentials or DATABASE_URL were present at the beginning of this phase.
-
 
 ## Phase 2.5 intent allowlist and checks
 

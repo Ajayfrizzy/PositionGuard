@@ -14,12 +14,12 @@ Repay leaves collateral constant and decreases debt. Add-collateral leaves debt 
 
 Thresholds must satisfy target > warning > emergency > 1.
 
-| HF | Risk |
-| --- | --- |
-| At or above target, or no debt | SAFE |
-| Warning inclusive to target exclusive | WATCH |
-| Emergency inclusive to warning exclusive | HIGH |
-| Below emergency | CRITICAL |
+| HF                                       | Risk     |
+| ---------------------------------------- | -------- |
+| At or above target, or no debt           | SAFE     |
+| Warning inclusive to target exclusive    | WATCH    |
+| Emergency inclusive to warning exclusive | HIGH     |
+| Below emergency                          | CRITICAL |
 
 SAFE returns NO_ACTION with no candidates. Per the updated Phase 1 brief, all positions below target, including WATCH, are evaluated. This supersedes the original plan's monitor-only WATCH behavior.
 
