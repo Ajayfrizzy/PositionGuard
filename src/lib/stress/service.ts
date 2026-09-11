@@ -41,8 +41,10 @@ export function analyzeStress(input: { position: PortfolioPosition; policy: Prot
     currentHealthFactor: input.position.healthFactorWad === null ? null : formatUnits(BigInt(input.position.healthFactorWad), 18),
     projectedHealthFactor: stressedPosition.healthFactorWad === null ? null : formatUnits(BigInt(stressedPosition.healthFactorWad), 18),
     projectedRisk: result.riskLevel,
+    targetHealthFactor: input.policy.targetHealthFactor,
     mei: result.selectedCandidate ? { action: result.selectedCandidate.type, asset: result.selectedCandidate.assetSymbol ?? result.selectedCandidate.asset, amount: result.selectedCandidate.tokenAmount ?? result.selectedCandidate.amount } : null,
     requiredCapitalUsd: result.selectedCandidate?.estimatedUsdValue ?? null,
+    projectedRecoveryHealthFactor: result.selectedCandidate?.expectedHealthFactor ?? null,
     result,
   };
 }
