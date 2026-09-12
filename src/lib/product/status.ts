@@ -1,53 +1,60 @@
 import type { FundingReadiness, FundingReadinessState } from "../funding/readiness";
 
-export type FundingUxStatus =
-  "READY" | "NEEDS FUNDING" | "ALLOWANCE REQUIRED" | "SENDER ISSUE" | "KEEPERHUB UNAVAILABLE";
-export function mapFundingReadiness(readiness: FundingReadiness | null): {
+export type FundingUxStatus = "NOT_CHECKED" | "NO_ACTION_REQUIRED" | FundingReadinessState;
+export function mapFundingReadiness(
+  readiness: FundingReadiness | null,
+  emptyState: "NOT_CHECKED" | "NO_ACTION_REQUIRED" = "NOT_CHECKED",
+): {
   status: FundingUxStatus;
   explanation: string;
   action: string | null;
 } {
+  if (!readiness && emptyState === "NO_ACTION_REQUIRED")
+    return {
+      status: "NO_ACTION_REQUIRED",
+      explanation: "No protection action currently requires funding.",
+      action:
+        "No protection funding check is required right now. PositionGuard will evaluate funding readiness automatically when a protection action is selected.",
+    };
   if (!readiness)
     return {
-      status: "KEEPERHUB UNAVAILABLE",
+      status: "NOT_CHECKED",
       explanation: "Funding readiness has not been checked yet.",
       action: "Run a protection readiness check.",
     };
   const asset = readiness.requiredAsset;
-  const required = readiness.requiredAmount;
   const handlers: Record<
     FundingReadinessState,
     { status: FundingUxStatus; explanation: string; action: string | null }
   > = {
     READY: {
       status: "READY",
-      explanation: `PositionGuard currently has enough ${asset} and allowance to protect this position.`,
+      explanation: "Protection funding is ready.",
       action: null,
     },
     INSUFFICIENT_BALANCE: {
-      status: "NEEDS FUNDING",
-      explanation: `Add at least ${required} ${asset} to your protection balance before automatic protection can execute.`,
+      status: "INSUFFICIENT_BALANCE",
+      explanation: "Add more protection funds.",
       action: `Send ${asset} to the displayed protection funding address.`,
     },
     INSUFFICIENT_ALLOWANCE: {
-      status: "ALLOWANCE REQUIRED",
-      explanation: `A bounded ${asset} approval of ${readiness.requiredAllowance} is required for Aave protection.`,
+      status: "INSUFFICIENT_ALLOWANCE",
+      explanation: "A bounded Aave approval is required.",
       action: `Approve only ${readiness.requiredAllowance} ${asset} for the displayed Aave spender.`,
     },
     SENDER_MISMATCH: {
-      status: "SENDER ISSUE",
-      explanation: "The protection funding account could not be verified. No action will execute.",
+      status: "SENDER_MISMATCH",
+      explanation: "Protection sender configuration does not match.",
       action: "Contact PositionGuard support.",
     },
     KEEPERHUB_UNAVAILABLE: {
-      status: "KEEPERHUB UNAVAILABLE",
-      explanation:
-        "The protection service is temporarily unavailable. Monitoring and alerts continue.",
+      status: "KEEPERHUB_UNAVAILABLE",
+      explanation: "KeeperHub could not be reached or verified.",
       action: "Try the readiness check again later.",
     },
     UNSUPPORTED_ASSET: {
-      status: "NEEDS FUNDING",
-      explanation: `${asset} is not currently supported as a protection funding asset.`,
+      status: "UNSUPPORTED_ASSET",
+      explanation: "This protection asset is not currently supported.",
       action: "Choose a supported protection action.",
     },
   };

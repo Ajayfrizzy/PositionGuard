@@ -1,6 +1,6 @@
 import { PageHeader, StatusPill } from "@/components/ui";
 import { StressForm } from "@/components/stress-form";
-import { loadCurrentProductData as loadProductData } from "@/lib/product/current-data";
+import { loadScenarioData as loadProductData } from "@/lib/product/current-data";
 import { createScenarioAuthorization } from "@/lib/stress/scenario-auth";
 import { Icon } from "@/components/icons";
 export const dynamic = "force-dynamic";

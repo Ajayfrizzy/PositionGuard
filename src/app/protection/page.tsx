@@ -2,7 +2,7 @@ import { Card, EmptyState, PageHeader, StatusPill } from "@/components/ui";
 import { ExecutionPanel } from "@/components/execution-panel";
 import { Icon } from "@/components/icons";
 import { deterministicExplanation } from "@/lib/agent/explanation";
-import { loadCurrentProductData } from "@/lib/product/current-data";
+import { loadProtectionData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber } from "@/lib/product/format";
 import type { CandidateView } from "@/lib/product/models";
 
@@ -58,7 +58,7 @@ function CandidateRow({
 }
 
 export default async function ProtectionPage() {
-  const data = await loadCurrentProductData();
+  const data = await loadProtectionData();
   const selected = data.selectedCandidate;
   const actionable = data.riskLevel === "SAFE" ? null : selected;
   const analysisHf = data.analysisHealthFactor ?? data.position.healthFactor;

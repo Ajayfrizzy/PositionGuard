@@ -10,10 +10,18 @@ import {
 import { mapFundingReadiness, mapWorkerHealth } from "../../src/lib/product/status";
 import { postExecutionExplanation, validateExplanation } from "../../src/lib/agent/explanation";
 import { readFileSync } from "node:fs";
+import { databaseConnectionString } from "../../src/lib/db/connection";
 
 const source = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 
 describe("wallet session integration", () => {
+  it("keeps database TLS strict unless self-signed certificates are explicitly allowed", () => {
+    const strict = "postgresql://user:secret@example.test:5432/postgres?sslmode=verify-full";
+    expect(databaseConnectionString(strict, false)).toBe(strict);
+    const development = new URL(databaseConnectionString(strict, true));
+    expect(development.searchParams.get("sslmode")).toBe("no-verify");
+  });
+
   it("uses explicit session identity in the product shell", () => {
     const shell = source("src/components/app-shell.tsx");
     expect(shell).toContain("session.authenticated");
@@ -29,6 +37,14 @@ describe("wallet session integration", () => {
   it("provides disconnect and expired-session recovery", () => {
     expect(source("src/components/app-shell.tsx")).toContain('method: "DELETE"');
     expect(source("src/components/notification-center.tsx")).toContain("Reconnect Wallet");
+  });
+
+  it("selects MetaMask explicitly and switches unsupported injected chains", () => {
+    const onboarding = source("src/components/wallet-onboarding.tsx");
+    expect(onboarding).toContain("eip6963:requestProvider");
+    expect(onboarding).toContain('info.rdns === "io.metamask"');
+    expect(onboarding).toContain('method: "wallet_switchEthereumChain"');
+    expect(onboarding).toContain('const BASE_SEPOLIA_CHAIN_HEX = "0x14a34"');
   });
 });
 
@@ -85,12 +101,34 @@ describe("product readiness presentation", () => {
   };
   it("maps funding states to user-facing actions", () => {
     expect(mapFundingReadiness({ ...base, state: "INSUFFICIENT_BALANCE" }).status).toBe(
-      "NEEDS FUNDING",
+      "INSUFFICIENT_BALANCE",
     );
     expect(mapFundingReadiness({ ...base, state: "INSUFFICIENT_ALLOWANCE" }).explanation).toContain(
       "bounded",
     );
-    expect(mapFundingReadiness({ ...base, state: "READY" }).explanation).toContain("enough USDC");
+    expect(mapFundingReadiness({ ...base, state: "READY" }).explanation).toBe(
+      "Protection funding is ready.",
+    );
+  });
+  it("keeps unchecked and no-action funding states distinct from KeeperHub failures", () => {
+    expect(mapFundingReadiness(null)).toMatchObject({ status: "NOT_CHECKED" });
+    expect(mapFundingReadiness(null, "NO_ACTION_REQUIRED")).toMatchObject({
+      status: "NO_ACTION_REQUIRED",
+      explanation: "No protection action currently requires funding.",
+    });
+    expect(mapFundingReadiness(null).status).not.toBe("KEEPERHUB_UNAVAILABLE");
+  });
+  it("does not render contradictory empty funding state details", () => {
+    const panel = source("src/components/funding-panel.tsx");
+    expect(panel).toMatch(/\{readiness && \(\s*<dl>/);
+    expect(panel).toContain("mapFundingReadiness(null)");
+  });
+  it("returns a non-error state for a safe position without an MEI", () => {
+    const route = source("src/app/api/funding-readiness/route.ts");
+    expect(route).toContain("if (!prepared.analysis.result.selectedCandidate)");
+    expect(route).toContain('selected.readiness?.state ?? "NO_ACTION_REQUIRED"');
+    expect(route).toContain('"NO_ACTIONABLE_CANDIDATE"');
+    expect(route).toContain('mapFundingReadiness(selected.readiness, "NO_ACTION_REQUIRED")');
   });
   it("maps fresh, stale, and missing worker checks", () => {
     const now = new Date("2026-09-11T10:10:00Z");

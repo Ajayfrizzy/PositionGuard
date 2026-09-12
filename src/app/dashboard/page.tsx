@@ -9,7 +9,7 @@ import {
   StatusPill,
 } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { loadCurrentProductData } from "@/lib/product/current-data";
+import { loadDashboardData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber, shortAddress, timeAgo } from "@/lib/product/format";
 import { deterministicExplanation } from "@/lib/agent/explanation";
 
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 const riskTone = (risk: string) =>
   risk === "SAFE" ? "good" : risk === "WATCH" ? "warn" : "danger";
 export default async function DashboardPage() {
-  const data = await loadCurrentProductData();
+  const data = await loadDashboardData();
   const candidate = data.riskLevel === "SAFE" ? null : data.selectedCandidate;
   const execution = data.latestExecution;
   const explanation = deterministicExplanation({

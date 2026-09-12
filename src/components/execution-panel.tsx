@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ExecutionView } from "@/lib/product/models";
 import type { ExecutionStage, ProtectionExecutionResult } from "@/lib/execution/types";
 import { Icon } from "./icons";
+import { LoadingButton } from "./loading-button";
 
 export type TimelineState = "complete" | "active" | "pending" | "failed" | "cancelled";
 export interface TimelineStep {
@@ -183,6 +184,7 @@ export function ExecutionPanel({
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState<ProtectionExecutionResult | null>(null);
   async function requestProtection() {
+    if (busy) return;
     setBusy(true);
     setMessage("");
     setMessageIsError(false);
@@ -253,14 +255,16 @@ export function ExecutionPanel({
           Simulation reloads policy and Aave state, recomputes MEI, and checks funding and allowance
           without signing or broadcasting.
         </p>
-        <button
+        <LoadingButton
           className="button primary"
+          pending={busy}
+          pendingLabel="Simulating…"
           disabled={!canRequest || busy}
           onClick={() => void requestProtection()}
         >
           <Icon name="shield" />
-          {busy ? "Running safety checks…" : "Simulate protection"}
-        </button>
+          Simulate protection
+        </LoadingButton>
         {busy && (
           <p className="sr-only" role="status">
             Protection simulation is running.

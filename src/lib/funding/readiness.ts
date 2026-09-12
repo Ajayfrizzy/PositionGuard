@@ -3,6 +3,7 @@ import { isAddressEqual } from "viem";
 import { getProtectionFunding } from "../aave/funding";
 import { getAaveAllowance } from "../aave/allowance";
 import { verifyKeeperHub } from "../keeperhub/verification";
+import { KeeperHubReadError } from "../keeperhub/types";
 import type { CandidateAction } from "../protection/types";
 
 export type FundingReadinessState =
@@ -64,16 +65,22 @@ export async function assessFundingReadiness(
     return { ...base, state: "UNSUPPORTED_ASSET", reason: "UNSUPPORTED_ASSET" };
   const expected = input.expectedSender ?? process.env.KEEPERHUB_EXECUTION_WALLET;
   if (!expected)
-    return { ...base, state: "KEEPERHUB_UNAVAILABLE", reason: "EXECUTION_WALLET_NOT_CONFIGURED" };
+    return { ...base, state: "SENDER_MISMATCH", reason: "EXECUTION_WALLET_NOT_CONFIGURED" };
   let keeper;
   try {
     keeper = await dependencies.verifySender(input.chainId);
-  } catch {
+  } catch (error) {
     return {
       ...base,
       sender: expected,
-      state: "KEEPERHUB_UNAVAILABLE",
-      reason: "KEEPERHUB_UNAVAILABLE",
+      state:
+        error instanceof KeeperHubReadError && error.code.includes("MISMATCH")
+          ? "SENDER_MISMATCH"
+          : "KEEPERHUB_UNAVAILABLE",
+      reason:
+        error instanceof KeeperHubReadError && error.code.includes("MISMATCH")
+          ? "SENDER_MISMATCH"
+          : "KEEPERHUB_UNAVAILABLE",
     };
   }
   if (!keeper.capabilities.simulation)
@@ -82,6 +89,13 @@ export async function assessFundingReadiness(
       sender: keeper.reportedWallet,
       state: "KEEPERHUB_UNAVAILABLE",
       reason: "SIMULATION_UNAVAILABLE",
+    };
+  if (!keeper.capabilities.broadcast)
+    return {
+      ...base,
+      sender: keeper.reportedWallet,
+      state: "KEEPERHUB_UNAVAILABLE",
+      reason: "BROADCAST_UNAVAILABLE",
     };
   if (!isAddressEqual(keeper.reportedWallet as `0x${string}`, expected as `0x${string}`))
     return {

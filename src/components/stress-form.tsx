@@ -11,6 +11,7 @@ import {
   validateCustomPriceDrop,
 } from "@/lib/stress/presentation";
 import type { ProtectionResult } from "@/lib/protection/types";
+import { LoadingButton } from "./loading-button";
 
 type Result = {
   simulationOnly: true;
@@ -48,6 +49,7 @@ export function StressForm({
   const customError = choice === "custom" ? validateCustomPriceDrop(priceDrop) : null;
   async function run(event: React.FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setError("");
     if (!scenarioAuthorization) {
       setError(
@@ -149,13 +151,15 @@ export function StressForm({
           </div>
         </div>
         <div className="scenario-action">
-          <button
+          <LoadingButton
             className="button primary"
+            pending={busy}
+            pendingLabel="Running stress test…"
             disabled={busy || !scenarioAuthorization || Boolean(customError)}
           >
             <Icon name="activity" />
-            {busy ? "Calculating…" : "Run Stress Test"}
-          </button>
+            Run Stress Test
+          </LoadingButton>
           <p>PositionGuard will calculate the projected health factor and protection response.</p>
         </div>
         {error && (

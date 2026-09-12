@@ -12,6 +12,12 @@ import { z } from "zod";
 import { getChain } from "@/lib/chains/config";
 export const runtime = "nodejs";
 const schema = z.strictObject({ walletAddress: z.string(), chainId: z.number().int().positive() });
+
+function errorCode(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) return null;
+  return typeof error.code === "string" ? error.code : null;
+}
+
 export async function POST(request: Request) {
   try {
     if (!sameOrigin(request))
@@ -48,7 +54,40 @@ export async function POST(request: Request) {
       { challengeId: row.id, message, expiresAt: expiresAt.toISOString() },
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch {
-    return Response.json({ error: { code: "INVALID_CHALLENGE_REQUEST" } }, { status: 400 });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return Response.json(
+        { error: { code: "INVALID_CHALLENGE_REQUEST", message: "The wallet request is invalid." } },
+        { status: 400 },
+      );
+    }
+    if (error instanceof Error && error.message === "UNSUPPORTED_CHAIN") {
+      return Response.json(
+        {
+          error: {
+            code: "UNSUPPORTED_CHAIN",
+            message: "Switch your wallet to Base Sepolia or Base mainnet and try again.",
+          },
+        },
+        { status: 422 },
+      );
+    }
+    if (error instanceof Error && /address/i.test(error.message)) {
+      return Response.json(
+        { error: { code: "INVALID_WALLET_ADDRESS", message: "The selected wallet is invalid." } },
+        { status: 400 },
+      );
+    }
+
+    console.error("AUTH_CHALLENGE_FAILED", { code: errorCode(error) ?? "UNKNOWN" });
+    return Response.json(
+      {
+        error: {
+          code: "AUTH_SERVICE_UNAVAILABLE",
+          message: "Wallet sign-in is temporarily unavailable. Check the database connection.",
+        },
+      },
+      { status: 503 },
+    );
   }
 }

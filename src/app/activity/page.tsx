@@ -1,6 +1,6 @@
 import { Card, EmptyState, PageHeader, StatusPill } from "@/components/ui";
 import { Icon } from "@/components/icons";
-import { loadCurrentProductData as loadProductData } from "@/lib/product/current-data";
+import { loadActivityData as loadProductData } from "@/lib/product/current-data";
 import { mapAuditTimeline } from "@/lib/product/audit";
 import { formatNumber, shortAddress } from "@/lib/product/format";
 import { postExecutionExplanation } from "@/lib/agent/explanation";

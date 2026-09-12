@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon, ShieldMark } from "./icons";
 import { shortAddress } from "@/lib/product/format";
 
@@ -25,7 +25,7 @@ export type AppSession = {
 export function AppShell({
   children,
   session,
-  protectionAttention,
+  protectionAttention: initialProtectionAttention,
 }: {
   children: React.ReactNode;
   session: AppSession;
@@ -34,6 +34,34 @@ export function AppShell({
   const path = usePathname();
   const router = useRouter();
   const [disconnecting, setDisconnecting] = useState(false);
+  const [protectionAttention, setProtectionAttention] = useState(initialProtectionAttention);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const visiblePendingPath = pendingPath === path ? null : pendingPath;
+
+  useEffect(() => {
+    if (!session.authenticated) return;
+    const controller = new AbortController();
+    fetch("/api/shell", { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { protectionAttention?: boolean } | null) => {
+        if (data) setProtectionAttention(Boolean(data.protectionAttention));
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [session.authenticated]);
+
+  function navigationProps(href: string) {
+    const active = path === href || (path === "/" && href === "/dashboard");
+    const pending = visiblePendingPath === href && !active;
+    return {
+      "aria-current": active ? ("page" as const) : undefined,
+      "aria-label": pending ? `${href.slice(1)} loading` : undefined,
+      className: active ? "active" : pending ? "pending" : "",
+      onClick: () => {
+        if (!active) setPendingPath(href);
+      },
+    };
+  }
 
   async function disconnect() {
     setDisconnecting(true);
@@ -59,13 +87,10 @@ export function AppShell({
         </Link>
         <nav className="side-nav" aria-label="Primary navigation">
           {nav.map(([href, label, icon]) => (
-            <Link
-              className={path === href || (path === "/" && href === "/dashboard") ? "active" : ""}
-              href={href}
-              key={href}
-            >
+            <Link {...navigationProps(href)} href={href} key={href}>
               <Icon name={icon} />
               <span>{label}</span>
+              {visiblePendingPath === href && <span className="nav-spinner" />}
               {label === "Protection" && protectionAttention && (
                 <span className="nav-alert" aria-label="Protection action available" />
               )}
@@ -105,7 +130,9 @@ export function AppShell({
               disabled={disconnecting}
               onClick={() => void disconnect()}
               aria-label="Disconnect from PositionGuard"
+              aria-busy={disconnecting}
             >
+              {disconnecting && <span className="button-spinner" aria-hidden="true" />}
               {disconnecting ? "Disconnecting…" : "Disconnect"}
             </button>
           ) : (
@@ -116,7 +143,7 @@ export function AppShell({
       <main className="app-main">{children}</main>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {nav.map(([href, label, icon]) => (
-          <Link className={path === href ? "active" : ""} href={href} key={href}>
+          <Link {...navigationProps(href)} href={href} key={href}>
             <span className="mobile-nav-icon">
               <Icon name={icon} />
               {label === "Protection" && protectionAttention && (
@@ -124,6 +151,7 @@ export function AppShell({
               )}
             </span>
             <span>{label}</span>
+            {visiblePendingPath === href && <span className="sr-only">Loading</span>}
           </Link>
         ))}
       </nav>

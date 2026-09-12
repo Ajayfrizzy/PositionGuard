@@ -3,14 +3,23 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ProductPolicy } from "@/lib/product/models";
 import { Icon } from "./icons";
+import { LoadingButton } from "./loading-button";
 const fields = [
   [
     "targetHealthFactor",
     "Target health factor",
-    "PositionGuard aims to restore the position to this level.",
+    "PositionGuard aims to restore the position to this safety level.",
   ],
-  ["warningHealthFactor", "Warning health factor", "Risk monitoring escalates below this level."],
-  ["emergencyHealthFactor", "Emergency health factor", "Critical status begins below this level."],
+  [
+    "warningHealthFactor",
+    "Warning health factor",
+    "PositionGuard increases monitoring and prepares protection below this level.",
+  ],
+  [
+    "emergencyHealthFactor",
+    "Emergency health factor",
+    "PositionGuard treats the position as critical below this level.",
+  ],
   [
     "maxAutonomousAmountUsd",
     "Maximum amount per intervention",
@@ -47,6 +56,7 @@ export function PolicyForm({
   }
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setStatus("");
     setError(false);
@@ -145,7 +155,12 @@ export function PolicyForm({
             <span className="label">Risk thresholds</span>
             <h2>Health factor policy</h2>
           </div>
-          <span className="ordering">Target &gt; Warning &gt; Emergency &gt; 1.00</span>
+          <div className="threshold-rule">
+            <span className="ordering">Target &gt; Warning &gt; Emergency &gt; Liquidation</span>
+            <small>
+              Aave positions become liquidatable when health factor falls to 1.00 or below.
+            </small>
+          </div>
         </div>
         <div className="form-grid">
           {fields.slice(0, 3).map(([key, label, help]) => (
@@ -273,18 +288,18 @@ export function PolicyForm({
             <dd>Verified before every action</dd>
           </div>
         </dl>
-        <button
+        <LoadingButton
           className="button primary"
+          pending={busy}
+          pendingLabel="Saving…"
           disabled={busy || (policy.executionMode === "AUTONOMOUS" && !confirmed)}
         >
-          {busy
-            ? "Saving…"
-            : policy.enabled
-              ? "Save and enable protection"
-              : onboarding
-                ? "Save and continue to funding readiness"
-                : "Save protection settings"}
-        </button>
+          {policy.enabled
+            ? "Save and enable protection"
+            : onboarding
+              ? "Save and continue to funding readiness"
+              : "Save protection settings"}
+        </LoadingButton>
         {status && (
           <p
             className={`form-status ${error ? "error" : "success"}`}

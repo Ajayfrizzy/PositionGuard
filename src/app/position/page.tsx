@@ -1,5 +1,5 @@
 import { Card, EmptyState, Metric, PageHeader, StatusPill } from "@/components/ui";
-import { loadCurrentProductData as loadProductData } from "@/lib/product/current-data";
+import { loadPositionData as loadProductData } from "@/lib/product/current-data";
 import {
   formatCompactUsd,
   formatNumber,

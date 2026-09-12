@@ -166,6 +166,7 @@ function liveRisk(healthFactor: string | null, policy: ProductPolicy): RiskLevel
 async function loadProductDataUncached(
   accountScope?: string | null,
   chainScope?: number,
+  view: ProductDataView = "full",
 ): Promise<ProductData> {
   const network = chainScope ? getChain(chainScope) : getDefaultChain();
   const base = {
@@ -189,6 +190,9 @@ async function loadProductDataUncached(
   try {
     const db = getPrisma();
     const configuredWallet = process.env.AAVE_WALLET_ADDRESS?.toLowerCase();
+    const needsDecision = view === "full" || view === "dashboard" || view === "protection";
+    const needsActivity = view === "full" || view === "activity";
+    const needsLatestExecution = needsActivity || view === "dashboard" || view === "protection";
     const user = await db.user.findFirst({
       where:
         accountScope === null
@@ -208,14 +212,18 @@ async function loadProductDataUncached(
         },
         decisions: {
           orderBy: { createdAt: "desc" },
-          take: 1,
+          take: needsDecision ? 1 : 0,
           include: { snapshot: true, candidates: { orderBy: { rank: "asc" } } },
         },
-        auditEvents: { orderBy: { createdAt: "desc" }, take: 100 },
+        auditEvents: {
+          where: view === "protection" ? { type: "POSITION_CHANGED" } : undefined,
+          orderBy: { createdAt: "desc" },
+          take: needsActivity ? 100 : view === "protection" ? 1 : 0,
+        },
         monitoringRuns: {
           where: { chainId: network.chainId },
           orderBy: { startedAt: "desc" },
-          take: 1,
+          take: view === "full" || view === "dashboard" ? 1 : 0,
         },
       },
     });
@@ -227,7 +235,7 @@ async function loadProductDataUncached(
           : undefined,
       include: { decision: { include: { snapshot: true } } },
       orderBy: { createdAt: "desc" },
-      take: 25,
+      take: needsActivity ? 25 : needsLatestExecution ? 1 : 0,
     });
     const policyRow = user?.policies[0];
     const policy: ProductPolicy = policyRow
@@ -392,6 +400,9 @@ async function loadProductDataUncached(
 }
 
 export const loadProductData = cache(loadProductDataUncached);
+
+export type ProductDataView =
+  "full" | "dashboard" | "position" | "protection" | "scenario" | "activity" | "settings";
 
 export function chainForId(chainId: number) {
   return getChain(chainId);

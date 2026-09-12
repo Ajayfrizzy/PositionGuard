@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StatusPill } from "./ui";
+import { LoadingButton } from "./loading-button";
 type Notice = {
   id: string;
   type: string;
@@ -26,6 +27,8 @@ const labels: Record<string, string> = {
 export function NotificationCenter() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [error, setError] = useState("");
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   async function load() {
     const response = await fetch("/api/notifications");
     if (!response.ok) {
@@ -53,18 +56,31 @@ export function NotificationCenter() {
             status === 401 ? "Your session expired." : "Notifications are temporarily unavailable.",
           );
         }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
     };
   }, []);
   async function mark(notificationId?: string) {
-    await fetch("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(notificationId ? { notificationId } : { all: true }),
-    });
-    await load();
+    if (pendingId) return;
+    setPendingId(notificationId ?? "all");
+    setError("");
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notificationId ? { notificationId } : { all: true }),
+      });
+      if (!response.ok) throw new Error("Notification could not be updated. Please retry.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Notification could not be updated.");
+    } finally {
+      setPendingId(null);
+    }
   }
   return (
     <section className="card notification-center">
@@ -74,9 +90,15 @@ export function NotificationCenter() {
           <h2>Meaningful protection events</h2>
         </div>
         {notices.some((item) => !item.readAt) && (
-          <button className="button secondary" onClick={() => void mark()}>
+          <LoadingButton
+            className="button secondary"
+            pending={pendingId === "all"}
+            pendingLabel="Updating…"
+            disabled={Boolean(pendingId)}
+            onClick={() => void mark()}
+          >
             Mark all read
-          </button>
+          </LoadingButton>
         )}
       </div>
       {error && (
@@ -87,7 +109,12 @@ export function NotificationCenter() {
           </Link>
         </div>
       )}
-      {notices.length ? (
+      {loading ? (
+        <div className="notification-loading" role="status" aria-busy="true">
+          <span className="button-spinner" aria-hidden="true" />
+          Loading notifications…
+        </div>
+      ) : notices.length ? (
         <div className="notification-list">
           {notices.map((notice) => (
             <article className={notice.readAt ? "read" : "unread"} key={notice.id}>
@@ -114,7 +141,17 @@ export function NotificationCenter() {
                   {notice.webhookStatus.toLowerCase()}
                 </small>
               </div>
-              {!notice.readAt && <button onClick={() => void mark(notice.id)}>Mark read</button>}
+              {!notice.readAt && (
+                <LoadingButton
+                  className="notification-read-button"
+                  pending={pendingId === notice.id}
+                  pendingLabel="Updating…"
+                  disabled={Boolean(pendingId)}
+                  onClick={() => void mark(notice.id)}
+                >
+                  Mark read
+                </LoadingButton>
+              )}
             </article>
           ))}
         </div>

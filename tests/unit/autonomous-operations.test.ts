@@ -119,6 +119,46 @@ describe("autonomous funding and fallback", () => {
       ).state,
     ).toBe("INSUFFICIENT_ALLOWANCE");
   });
+  it("does not assess funding when there is no actionable candidate", async () => {
+    const assess = vi.fn();
+    const selected = await selectExecutableCandidate(
+      { chainId: 84532, candidates: [], allowApproval: true },
+      assess,
+    );
+    expect(selected).toEqual({ candidate: null, readiness: null, rejected: [] });
+    expect(assess).not.toHaveBeenCalled();
+  });
+  it("reports an actual KeeperHub verification failure as unavailable", async () => {
+    const result = await assessFundingReadiness(
+      { chainId: 84532, candidate: candidate("a", 1), expectedSender: sender },
+      readinessDeps({
+        verifySender: vi.fn(async () => {
+          throw new Error("offline");
+        }),
+      }),
+    );
+    expect(result.state).toBe("KEEPERHUB_UNAVAILABLE");
+  });
+  it.each(["senderRouteVerified", "phase3Ready"] as const)(
+    "evaluates funding when read-only %s is false",
+    async (flag) => {
+      const dependencies = readinessDeps({
+        verifySender: vi.fn(async () => ({
+          reportedWallet: sender,
+          capabilities: { simulation: true, broadcast: true },
+          [flag]: false,
+        })),
+      });
+      expect(
+        await assessFundingReadiness(
+          { chainId: 84532, candidate: candidate("a", 1), expectedSender: sender },
+          dependencies,
+        ),
+      ).toMatchObject({ state: "READY" });
+      expect(dependencies.balance).toHaveBeenCalledOnce();
+      expect(dependencies.allowance).toHaveBeenCalledOnce();
+    },
+  );
   it("falls back deterministically without using a forbidden candidate", async () => {
     const blocked = candidate("minimum", 1),
       ready = candidate("fallback", 2),

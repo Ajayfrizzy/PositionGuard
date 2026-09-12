@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import { StatusPill } from "./ui";
+import { LoadingButton } from "./loading-button";
+import { mapFundingReadiness, type FundingUxStatus } from "@/lib/product/status";
 type Readiness = {
   state: string;
   requiredAsset: string;
@@ -20,12 +22,14 @@ export function FundingPanel({
   onboarding?: boolean;
 }) {
   const [data, setData] = useState<{
+    state: FundingUxStatus;
     readiness: Readiness | null;
-    ux: { status: string; explanation: string; action: string | null };
+    ux: { status: FundingUxStatus; explanation: string; action: string | null };
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function check() {
+    if (busy) return;
     setBusy(true);
     setError("");
     try {
@@ -40,6 +44,13 @@ export function FundingPanel({
     }
   }
   const readiness = data?.readiness;
+  const ux = data?.ux ?? mapFundingReadiness(null);
+  const tone =
+    ux.status === "READY"
+      ? "good"
+      : ux.status === "NOT_CHECKED" || ux.status === "NO_ACTION_REQUIRED"
+        ? "neutral"
+        : "warn";
   return (
     <section className="card funding-panel">
       <div className="section-heading">
@@ -52,53 +63,51 @@ export function FundingPanel({
             PositionGuard never moves funds or requests unlimited approval silently.
           </p>
         </div>
-        {data && (
-          <StatusPill tone={data.ux.status === "READY" ? "good" : "warn"}>
-            {data.ux.status}
-          </StatusPill>
-        )}
+        <StatusPill tone={tone}>{ux.status.replaceAll("_", " ")}</StatusPill>
       </div>
       {data ? (
         <>
-          <p className="funding-explanation">{data.ux.explanation}</p>
-          <dl>
-            <div>
-              <dt>Required protection asset</dt>
-              <dd>{readiness?.requiredAsset ?? "Not selected"}</dd>
-            </div>
-            <div>
-              <dt>Required amount</dt>
-              <dd>{readiness?.requiredAmount ?? "—"}</dd>
-            </div>
-            <div>
-              <dt>Available protection balance</dt>
-              <dd>{readiness?.availableBalance ?? "Unavailable"}</dd>
-            </div>
-            <div>
-              <dt>Current Aave allowance</dt>
-              <dd>{readiness?.currentAllowance ?? "Unavailable"}</dd>
-            </div>
-            <div>
-              <dt>Required allowance</dt>
-              <dd>{readiness?.requiredAllowance ?? "—"}</dd>
-            </div>
-            <div>
-              <dt>Funding destination</dt>
-              <dd>
-                <code>{readiness?.sender ?? "Unavailable"}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Approval spender</dt>
-              <dd>
-                <code>{spender}</code>
-              </dd>
-            </div>
-          </dl>
-          {data.ux.action && (
+          <p className="funding-explanation">{ux.explanation}</p>
+          {readiness && (
+            <dl>
+              <div>
+                <dt>Required protection asset</dt>
+                <dd>{readiness?.requiredAsset ?? "Not selected"}</dd>
+              </div>
+              <div>
+                <dt>Required amount</dt>
+                <dd>{readiness?.requiredAmount ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>Available protection balance</dt>
+                <dd>{readiness?.availableBalance ?? "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt>Current Aave allowance</dt>
+                <dd>{readiness?.currentAllowance ?? "Unavailable"}</dd>
+              </div>
+              <div>
+                <dt>Required allowance</dt>
+                <dd>{readiness?.requiredAllowance ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>Funding destination</dt>
+                <dd>
+                  <code>{readiness?.sender ?? "Unavailable"}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Approval spender</dt>
+                <dd>
+                  <code>{spender}</code>
+                </dd>
+              </div>
+            </dl>
+          )}
+          {ux.action && (
             <div className="funding-guidance">
               <b>What to do next</b>
-              <p>{data.ux.action}</p>
+              <p>{ux.action}</p>
               {readiness?.state === "INSUFFICIENT_ALLOWANCE" && (
                 <p>
                   Token: {readiness.requiredAsset}. Spender: Aave Pool. Purpose: allow only the
@@ -110,19 +119,18 @@ export function FundingPanel({
           )}
         </>
       ) : (
-        <p className="empty-row">
-          Check the exact asset, balance, allowance, funding destination, and protection-service
-          readiness for the current action.
-        </p>
+        <p className="empty-row">{ux.explanation}</p>
       )}
-      <button
+      <LoadingButton
         type="button"
         className="button secondary"
+        pending={busy}
+        pendingLabel="Checking funding…"
         disabled={busy}
         onClick={() => void check()}
       >
-        {busy ? "Checking…" : "Check funding readiness"}
-      </button>
+        Check funding readiness
+      </LoadingButton>
       {error && (
         <p className="form-status error" role="alert">
           {error}
