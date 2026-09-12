@@ -75,11 +75,13 @@ export interface ProductData {
   database: ConnectionState;
   network: { chainId: number; name: string; testnet: boolean; explorer: string };
   position: ProductPosition;
+  hasAavePosition: boolean;
   policy: ProductPolicy;
   riskLevel: RiskLevel;
   analysisHealthFactor: string | null;
   candidates: CandidateView[];
   selectedCandidate: CandidateView | null;
+  decisionIsCurrent: boolean;
   protectionAttention: boolean;
   latestExecution: ExecutionView | null;
   executions: ExecutionView[];
@@ -95,6 +97,39 @@ export interface ProductData {
   error: string | null;
   monitoring: { active: boolean; lastCheck: string | null; status: string | null };
   fundingReadiness: string | null;
+}
+
+export function protectionRecommendation(input: {
+  hasCandidate: boolean;
+  riskLevel: RiskLevel;
+  policyEnabled: boolean;
+  executionMode: ProductPolicy["executionMode"];
+}) {
+  if (!input.hasCandidate || input.riskLevel === "SAFE")
+    return { actionable: false, cta: null, message: "No protection action required." };
+  if (!input.policyEnabled)
+    return {
+      actionable: true,
+      cta: { label: "View analysis", href: "/protection" },
+      message: "Enable Protection before PositionGuard can act.",
+    };
+  if (input.executionMode === "MONITOR_ONLY")
+    return {
+      actionable: true,
+      cta: { label: "View analysis", href: "/protection" },
+      message: "Monitor Only mode will alert you; no transactions will be submitted.",
+    };
+  if (input.executionMode === "REQUIRE_APPROVAL")
+    return {
+      actionable: true,
+      cta: { label: "Review approval flow", href: "/protection" },
+      message: "PositionGuard will prepare protection, but you will approve execution.",
+    };
+  return {
+    actionable: true,
+    cta: { label: "Simulate protection", href: "/protection?execute=1" },
+    message: "PositionGuard will act automatically within your configured limits.",
+  };
 }
 
 export function shouldShowProtectionAttention(input: {
@@ -117,7 +152,7 @@ const REASONS: Record<string, string> = {
   BELOW_TARGET: "Does not restore the configured target health factor.",
   POLICY_DISABLED: "Protection is disabled by policy.",
   ACTION_DISABLED: "This action type is not permitted by policy.",
-  INSUFFICIENT_BALANCE: "The protection wallet balance is insufficient.",
+  INSUFFICIENT_BALANCE: "The Protection Account balance is insufficient.",
   INVALID_AMOUNT: "The intervention amount is invalid.",
   AUTONOMOUS_LIMIT: "Exceeds the maximum autonomous intervention.",
   DAILY_LIMIT: "Exceeds the remaining daily autonomous spend limit.",

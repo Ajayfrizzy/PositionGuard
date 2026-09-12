@@ -119,6 +119,20 @@ export function WalletOnboarding() {
   const [continuing, setContinuing] = useState(false);
   const [pendingLabel, setPendingLabel] = useState("Connecting wallet…");
   const [detection, setDetection] = useState<Detection | null>(null);
+  async function tryAnotherWallet() {
+    if (continuing) return;
+    setContinuing(true);
+    try {
+      await fetch("/api/auth/session", { method: "DELETE" });
+      setDetection(null);
+      setAddress("");
+      setChainId(0);
+      setStage(0);
+      setStatus("Connect another MetaMask account to check its Aave V3 position.");
+    } finally {
+      setContinuing(false);
+    }
+  }
   async function begin() {
     if (busy) return;
     setBusy(true);
@@ -159,9 +173,7 @@ export function WalletOnboarding() {
       };
       if (!challengeResponse.ok || !challenge.challengeId || !challenge.message)
         throw new Error(
-          challenge.error?.message ??
-            challenge.error?.code ??
-            "Could not create a sign-in challenge.",
+          challenge.error?.message ?? "PositionGuard could not create a sign-in challenge.",
         );
       const signature = (await ethereum.request({
         method: "personal_sign",
@@ -179,9 +191,13 @@ export function WalletOnboarding() {
           signature,
         }),
       });
-      const verified = (await verifyResponse.json()) as { error?: { code?: string } };
+      const verified = (await verifyResponse.json()) as {
+        error?: { code?: string; message?: string };
+      };
       if (!verifyResponse.ok)
-        throw new Error(verified.error?.code ?? "Wallet verification failed.");
+        throw new Error(
+          verified.error?.message ?? "PositionGuard could not verify wallet ownership.",
+        );
       setStage(2);
       setPendingLabel("Reading Aave position…");
       setStatus("Ownership verified. Reading your Aave V3 position…");
@@ -234,29 +250,50 @@ export function WalletOnboarding() {
           {detection ? (
             <>
               <div className="position-detected">
-                <Icon name="check" />
+                <Icon name={detection.detected ? "check" : "activity"} />
                 <div>
                   <b>
-                    {detection.detected ? "Aave position detected" : "Protected wallet created"}
+                    {detection.detected
+                      ? "Aave V3 position detected"
+                      : "No supported Aave V3 position detected"}
                   </b>
-                  <span>
-                    Health factor {detection.position.healthFactor ?? "No debt"} · $
-                    {detection.position.totalCollateralUsd} collateral · $
-                    {detection.position.totalDebtUsd} debt
-                  </span>
+                  {detection.detected ? (
+                    <span>
+                      Health Factor {detection.position.healthFactor ?? "No debt"} · $
+                      {detection.position.totalCollateralUsd} collateral · $
+                      {detection.position.totalDebtUsd} debt
+                    </span>
+                  ) : (
+                    <span>
+                      Choose another wallet with supplied collateral or debt on Aave V3 Base
+                      Sepolia.
+                    </span>
+                  )}
                 </div>
               </div>
-              <LoadingButton
-                className="button primary"
-                pending={continuing}
-                pendingLabel="Opening protection setup…"
-                onClick={() => {
-                  setContinuing(true);
-                  router.push("/settings?onboarding=1");
-                }}
-              >
-                Continue to Protection Setup <Icon name="arrow" />
-              </LoadingButton>
+              {detection.detected ? (
+                <LoadingButton
+                  className="button primary"
+                  pending={continuing}
+                  pendingLabel="Opening protection setup…"
+                  onClick={() => {
+                    if (continuing) return;
+                    setContinuing(true);
+                    router.push("/settings?onboarding=1");
+                  }}
+                >
+                  Continue to Protection Setup <Icon name="arrow" />
+                </LoadingButton>
+              ) : (
+                <LoadingButton
+                  className="button primary"
+                  pending={continuing}
+                  pendingLabel="Resetting wallet…"
+                  onClick={() => void tryAnotherWallet()}
+                >
+                  Connect another wallet
+                </LoadingButton>
+              )}
             </>
           ) : (
             <>

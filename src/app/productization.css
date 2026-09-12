@@ -130,6 +130,27 @@
 .funding-panel {
   margin-bottom: 14px;
 }
+.activation-summary.disabled {
+  border-color: rgba(255, 190, 85, 0.28);
+}
+.activation-summary.enabled {
+  border-color: rgba(31, 230, 154, 0.22);
+}
+.simulation-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid rgba(75, 140, 255, 0.25);
+  border-radius: 8px;
+  color: #9eb8d6;
+  font-size: 10px;
+}
+.simulation-state b {
+  color: #7eafff;
+}
 .funding-explanation {
   font-size: 12px;
   color: #b5c4d2;
@@ -225,5 +246,11 @@
     grid-column: 2;
     text-align: left;
     padding: 0;
+  }
+}
+@media (max-width: 560px) {
+  .simulation-state {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

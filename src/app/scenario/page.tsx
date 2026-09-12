@@ -28,6 +28,10 @@ export default async function ScenarioPage() {
       >
         <StatusPill tone="blue">SIMULATION ONLY</StatusPill>
       </PageHeader>
+      <div className="simulation-state" role="note">
+        <b>SIMULATION ONLY</b>
+        <span>NO ONCHAIN STATE CHANGED</span>
+      </div>
       <section className="scenario-intro">
         <div className="round-icon">
           <Icon name="activity" />

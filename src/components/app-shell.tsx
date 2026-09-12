@@ -4,6 +4,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon, ShieldMark } from "./icons";
 import { shortAddress } from "@/lib/product/format";
+import {
+  mapSidebarStatus,
+  type ProtectionIndicator,
+  type WorkerStatus,
+} from "@/lib/product/status";
 
 const nav = [
   ["/dashboard", "Overview", "grid"],
@@ -35,6 +40,11 @@ export function AppShell({
   const router = useRouter();
   const [disconnecting, setDisconnecting] = useState(false);
   const [protectionAttention, setProtectionAttention] = useState(initialProtectionAttention);
+  const [policyEnabled, setPolicyEnabled] = useState(false);
+  const [workerStatus, setWorkerStatus] = useState<WorkerStatus>("NOT_STARTED");
+  const [protectionIndicator, setProtectionIndicator] = useState<ProtectionIndicator>(null);
+  const [shellLoaded, setShellLoaded] = useState(!session.authenticated);
+  const [shellUnavailable, setShellUnavailable] = useState(false);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const visiblePendingPath = pendingPath === path ? null : pendingPath;
 
@@ -42,11 +52,33 @@ export function AppShell({
     if (!session.authenticated) return;
     const controller = new AbortController();
     fetch("/api/shell", { signal: controller.signal })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data: { protectionAttention?: boolean } | null) => {
-        if (data) setProtectionAttention(Boolean(data.protectionAttention));
+      .then((response) => {
+        if (!response.ok) throw new Error("SHELL_STATUS_UNAVAILABLE");
+        return response.json();
       })
-      .catch(() => undefined);
+      .then(
+        (
+          data: {
+            protectionAttention?: boolean;
+            policyEnabled?: boolean;
+            workerStatus?: WorkerStatus;
+            protectionIndicator?: ProtectionIndicator;
+          } | null,
+        ) => {
+          if (!data) return;
+          setProtectionAttention(Boolean(data.protectionAttention));
+          setPolicyEnabled(Boolean(data.policyEnabled));
+          setWorkerStatus(data.workerStatus ?? "NOT_STARTED");
+          setProtectionIndicator(data.protectionIndicator ?? null);
+        },
+      )
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError"))
+          setShellUnavailable(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setShellLoaded(true);
+      });
     return () => controller.abort();
   }, [session.authenticated]);
 
@@ -75,6 +107,30 @@ export function AppShell({
   }
 
   if (path.startsWith("/dev/") || path === "/onboarding") return <>{children}</>;
+  const sidebarStatus = shellUnavailable
+    ? ({
+        heading: "Protection status unavailable",
+        detail: "Monitoring state could not be loaded",
+        tone: "warn",
+      } as const)
+    : session.authenticated && !shellLoaded
+      ? ({
+          heading: "Checking protection status",
+          detail: "Loading Monitoring state",
+          tone: "neutral",
+        } as const)
+      : mapSidebarStatus({
+          authenticated: session.authenticated,
+          enabled: policyEnabled,
+          workerStatus,
+        });
+  const networkName = session.chainId === 8453 ? "Base" : "Base Sepolia";
+  const isTestnet = session.chainId !== 8453;
+  const effectiveIndicator =
+    protectionIndicator ??
+    (protectionAttention
+      ? ({ tone: "warn", label: "Protection action needs attention" } as const)
+      : null);
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -91,25 +147,29 @@ export function AppShell({
               <Icon name={icon} />
               <span>{label}</span>
               {visiblePendingPath === href && <span className="nav-spinner" />}
-              {label === "Protection" && protectionAttention && (
-                <span className="nav-alert" aria-label="Protection action available" />
+              {label === "Protection" && effectiveIndicator && (
+                <span
+                  className={`nav-alert ${effectiveIndicator.tone}`}
+                  aria-label={effectiveIndicator.label}
+                  title={effectiveIndicator.label}
+                />
               )}
             </Link>
           ))}
         </nav>
         <div className="sidebar-status">
           <div className="status-heading">
-            <span className="live-dot" />
-            System operational
+            <span className={`status-dot ${sidebarStatus.tone}`} />
+            {sidebarStatus.heading}
           </div>
-          <p>Monitoring Base Sepolia</p>
+          <p>{sidebarStatus.detail}</p>
           <div className="network-chip">
             <span className="network-icon">◆</span>
             <span>
-              <b>Base Sepolia</b>
-              <small>Chain ID 84532</small>
+              <b>{networkName}</b>
+              <small>Chain ID {session.chainId ?? "—"}</small>
             </span>
-            <em>TESTNET</em>
+            {isTestnet && <em>TESTNET</em>}
           </div>
         </div>
         <div className="sidebar-foot">
@@ -146,8 +206,11 @@ export function AppShell({
           <Link {...navigationProps(href)} href={href} key={href}>
             <span className="mobile-nav-icon">
               <Icon name={icon} />
-              {label === "Protection" && protectionAttention && (
-                <span className="nav-alert" aria-label="Protection action available" />
+              {label === "Protection" && effectiveIndicator && (
+                <span
+                  className={`nav-alert ${effectiveIndicator.tone}`}
+                  aria-label={effectiveIndicator.label}
+                />
               )}
             </span>
             <span>{label}</span>

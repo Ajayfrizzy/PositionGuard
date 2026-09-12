@@ -84,8 +84,12 @@ export function PolicyForm({
       if (!response.ok) throw new Error(body.error?.message ?? "Policy update failed");
       setStatus(
         onboarding
-          ? "Protection settings saved. Continue to funding readiness below."
-          : "Protection settings saved. Monitoring continues even when this browser is closed.",
+          ? policy.enabled
+            ? "Protection enabled. Opening your dashboard."
+            : "Protection settings saved. Enable Protection when you are ready to begin monitoring."
+          : policy.enabled
+            ? "Protection settings saved. Hosted monitoring remains enabled."
+            : "Protection settings saved. Protection and monitoring are disabled.",
       );
       if (onboarding && policy.enabled) {
         router.push("/dashboard");
@@ -127,10 +131,10 @@ export function PolicyForm({
               </b>
               <small>
                 {mode === "MONITOR_ONLY"
-                  ? "Alert me when risk increases."
+                  ? "No transactions will be submitted. PositionGuard will alert you when risk increases."
                   : mode === "REQUIRE_APPROVAL"
-                    ? "Prepare the protection action and wait for my approval."
-                    : "Act automatically within the limits I set."}
+                    ? "PositionGuard will prepare protection, but you will approve execution."
+                    : "PositionGuard will act automatically within the limits you set."}
               </small>
             </label>
           ))}
@@ -153,7 +157,7 @@ export function PolicyForm({
         <div className="section-heading">
           <div>
             <span className="label">Risk thresholds</span>
-            <h2>Health factor policy</h2>
+            <h2>Health Factor policy</h2>
           </div>
           <div className="threshold-rule">
             <span className="ordering">Target &gt; Warning &gt; Emergency &gt; Liquidation</span>
@@ -246,16 +250,20 @@ export function PolicyForm({
         </div>
       </section>
       {fundingPanel}
-      <section className="card activation-summary">
+      <section className={`card activation-summary ${policy.enabled ? "enabled" : "disabled"}`}>
         <span className="label">
           {onboarding ? "Step 6 of 6 — Enable protection" : "Activation summary"}
         </span>
-        <h2>Review your protection limits</h2>
+        <h2>{policy.enabled ? "Protection will be enabled" : "Protection is disabled"}</h2>
         <Toggle
           checked={policy.enabled}
           setChecked={(value) => set("enabled", value)}
           title="Enable protection"
-          copy="Start hosted monitoring for this position."
+          copy={
+            policy.enabled
+              ? "Hosted Monitoring will run for this position after you save."
+              : "Monitoring and Protection Actions will remain off."
+          }
           highlight
         />
         <dl>
@@ -295,10 +303,12 @@ export function PolicyForm({
           disabled={busy || (policy.executionMode === "AUTONOMOUS" && !confirmed)}
         >
           {policy.enabled
-            ? "Save and enable protection"
-            : onboarding
-              ? "Save and continue to funding readiness"
-              : "Save protection settings"}
+            ? initial.enabled
+              ? "Save Protection Settings"
+              : "Enable Protection"
+            : initial.enabled
+              ? "Disable Protection"
+              : "Save Protection Settings"}
         </LoadingButton>
         {status && (
           <p

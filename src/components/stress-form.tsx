@@ -305,8 +305,8 @@ function StressResult({ result }: { result: Result }) {
         </p>
         <h2>What happens next</h2>
         <p>
-          This result is informational. Monitoring continues against live Aave state and no scenario
-          transaction is broadcast.
+          This result is informational. Live Monitoring, dashboard risk, funding readiness, and the
+          active decision remain unchanged. No scenario transaction is broadcast.
         </p>
         <details>
           <summary>Show technical details</summary>
@@ -319,7 +319,9 @@ function StressResult({ result }: { result: Result }) {
       <footer className="result-safety">
         <Icon name="shield" />
         <b>SIMULATION ONLY</b>
-        <span>No funds moved and no blockchain transaction was submitted.</span>
+        <span>
+          NO ONCHAIN STATE CHANGED · No funds moved and no blockchain transaction was submitted.
+        </span>
       </footer>
     </section>
   );

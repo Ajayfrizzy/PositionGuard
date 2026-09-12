@@ -121,9 +121,8 @@ export default async function ActivityPage() {
         </Card>
       ) : (
         <Card>
-          <EmptyState title="No audit events yet">
-            Monitoring and execution events will appear here from the database. PositionGuard does
-            not create cosmetic activity.
+          <EmptyState title="No protection activity yet.">
+            PositionGuard activity will appear here after Monitoring or Protection events occur.
           </EmptyState>
         </Card>
       )}

@@ -158,7 +158,7 @@ describe("product readiness presentation", () => {
         pollingIntervalMs: 60_000,
         now,
       }).status,
-    ).toBe("OFFLINE");
+    ).toBe("NOT_STARTED");
   });
   it("restricts candidate references in every AI field", () =>
     expect(() =>

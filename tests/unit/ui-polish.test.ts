@@ -7,7 +7,8 @@ describe("demo UI polish contracts", () => {
   it("keeps product navigation language user-facing and attention conditional", () => {
     const shell = source("src/components/app-shell.tsx");
     expect(shell).toContain("Protected Account");
-    expect(shell).toContain("protectionAttention &&");
+    expect(shell).toContain("effectiveIndicator &&");
+    expect(shell).toContain("aria-label={effectiveIndicator.label}");
     expect(shell).not.toContain("Demo Operator");
   });
 

@@ -12,13 +12,21 @@ import { Icon } from "@/components/icons";
 import { loadDashboardData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber, shortAddress, timeAgo } from "@/lib/product/format";
 import { deterministicExplanation } from "@/lib/agent/explanation";
+import { protectionRecommendation } from "@/lib/product/models";
 
 export const dynamic = "force-dynamic";
 const riskTone = (risk: string) =>
   risk === "SAFE" ? "good" : risk === "WATCH" ? "warn" : "danger";
 export default async function DashboardPage() {
   const data = await loadDashboardData();
-  const candidate = data.riskLevel === "SAFE" ? null : data.selectedCandidate;
+  const candidate =
+    data.riskLevel === "SAFE" || !data.decisionIsCurrent ? null : data.selectedCandidate;
+  const recommendation = protectionRecommendation({
+    hasCandidate: Boolean(candidate),
+    riskLevel: data.riskLevel,
+    policyEnabled: data.policy.enabled,
+    executionMode: data.policy.executionMode,
+  });
   const execution = data.latestExecution;
   const explanation = deterministicExplanation({
     healthFactor: data.position.healthFactor,
@@ -48,16 +56,27 @@ export default async function DashboardPage() {
       <div className="explanation-card">
         <span className="eyebrow">WHY THIS MATTERS</span>
         <h2>
-          {data.riskLevel === "SAFE"
-            ? "Your safety target is currently met"
-            : "Your position needs attention"}
+          {!data.hasAavePosition
+            ? "No supported Aave V3 position detected"
+            : data.riskLevel === "SAFE"
+              ? "Your safety target is currently met"
+              : "Your position needs attention"}
         </h2>
-        <p>{explanation.whyRiskChanged}</p>
-        <p>{explanation.whatHappensNext}</p>
-        <details>
-          <summary>Show technical details</summary>
-          <p>{explanation.policySummary}</p>
-        </details>
+        {!data.hasAavePosition ? (
+          <p>
+            PositionGuard needs a supported Aave V3 position before it can calculate Health Factor,
+            risk, or a Protection Action.
+          </p>
+        ) : (
+          <>
+            <p>{explanation.whyRiskChanged}</p>
+            <p>{explanation.whatHappensNext}</p>
+            <details>
+              <summary>Show technical details</summary>
+              <p>{explanation.policySummary}</p>
+            </details>
+          </>
+        )}
       </div>
       {data.error && (
         <div className="alert warning">
@@ -67,48 +86,57 @@ export default async function DashboardPage() {
       )}
       <div className="overview-grid">
         <Card className="health-card">
-          <div className="health-top">
-            <div>
-              <span className="label">Health factor</span>
-              <div className="health-value">{formatNumber(data.position.healthFactor, 2)}</div>
-            </div>
-            <StatusPill tone={riskTone(data.riskLevel)}>
-              <span className="pulse-dot" />
-              {data.riskLevel} RISK
-            </StatusPill>
-          </div>
-          <div className="hf-track">
-            <i
-              style={{
-                width: `${Math.min(100, Math.max(3, ((Number(data.position.healthFactor ?? 1) - 1) / 0.8) * 100))}%`,
-              }}
-            />
-            <span
-              className="target-marker"
-              style={{
-                left: `${Math.min(96, Math.max(4, ((Number(data.policy.targetHealthFactor) - 1) / 0.8) * 100))}%`,
-              }}
-            />
-          </div>
-          <div className="track-labels">
-            <span>1.00 liquidation</span>
-            <b>Target {formatNumber(data.policy.targetHealthFactor, 2)}</b>
-            <span>1.80 safe</span>
-          </div>
-          <p className="health-copy">
-            {data.riskLevel === "SAFE"
-              ? "Your position currently meets the configured safety target."
-              : "Your position is below the configured safety target. PositionGuard has evaluated defensive actions."}
-          </p>
-          <div className="health-meta">
-            <span>
-              <i className="live-dot" />
-              Last assessed {data.position.capturedAt ? timeAgo(data.position.capturedAt) : "never"}
-            </span>
-            <Link href="/position">
-              Position details <Icon name="arrow" />
-            </Link>
-          </div>
+          {!data.hasAavePosition ? (
+            <EmptyState title="No supported Aave V3 position detected">
+              Refresh the Position page after supplying collateral or borrowing on Base Sepolia.
+            </EmptyState>
+          ) : (
+            <>
+              <div className="health-top">
+                <div>
+                  <span className="label">Health factor</span>
+                  <div className="health-value">{formatNumber(data.position.healthFactor, 2)}</div>
+                </div>
+                <StatusPill tone={riskTone(data.riskLevel)}>
+                  <span className="pulse-dot" />
+                  {data.riskLevel} RISK
+                </StatusPill>
+              </div>
+              <div className="hf-track">
+                <i
+                  style={{
+                    width: `${Math.min(100, Math.max(3, ((Number(data.position.healthFactor ?? 1) - 1) / 0.8) * 100))}%`,
+                  }}
+                />
+                <span
+                  className="target-marker"
+                  style={{
+                    left: `${Math.min(96, Math.max(4, ((Number(data.policy.targetHealthFactor) - 1) / 0.8) * 100))}%`,
+                  }}
+                />
+              </div>
+              <div className="track-labels">
+                <span>1.00 liquidation</span>
+                <b>Target {formatNumber(data.policy.targetHealthFactor, 2)}</b>
+                <span>1.80 safe</span>
+              </div>
+              <p className="health-copy">
+                {data.riskLevel === "SAFE"
+                  ? "Your position currently meets the configured safety target."
+                  : "Your position is below the configured safety target. PositionGuard has evaluated defensive actions."}
+              </p>
+              <div className="health-meta">
+                <span>
+                  <i className="live-dot" />
+                  Last assessed{" "}
+                  {data.position.capturedAt ? timeAgo(data.position.capturedAt) : "never"}
+                </span>
+                <Link href="/position">
+                  Position details <Icon name="arrow" />
+                </Link>
+              </div>
+            </>
+          )}
         </Card>
         <Card className="protection-card">
           <div className="card-heading">
@@ -117,9 +145,11 @@ export default async function DashboardPage() {
             </div>
             <div>
               <span className="label">Protection status</span>
-              <h2>{data.policy.enabled ? "Active & monitoring" : "Protection disabled"}</h2>
+              <h2>{data.policy.enabled ? "Protection enabled" : "Protection disabled"}</h2>
             </div>
-            <StatusPill tone={data.policy.enabled ? "good" : "neutral"}>
+            <StatusPill
+              tone={data.policy.enabled ? (data.monitoring.active ? "good" : "warn") : "neutral"}
+            >
               {data.policy.enabled ? "ENABLED" : "DISABLED"}
             </StatusPill>
           </div>
@@ -140,7 +170,7 @@ export default async function DashboardPage() {
             </div>
             <div>
               <span>Worker status</span>
-              <b>{data.monitoring.status ?? "OFFLINE"}</b>
+              <b>{(data.monitoring.status ?? "NOT_STARTED").replaceAll("_", " ")}</b>
             </div>
             <div>
               <span>Last check</span>
@@ -152,7 +182,7 @@ export default async function DashboardPage() {
                 {data.fundingReadiness === "READY"
                   ? "READY"
                   : data.fundingReadiness
-                    ? "ATTENTION NEEDED"
+                    ? data.fundingReadiness.replaceAll("_", " ")
                     : "NOT CHECKED"}
               </b>
             </div>
@@ -183,6 +213,7 @@ export default async function DashboardPage() {
             <p>
               Smallest policy-compliant action expected to restore your configured safety target.
             </p>
+            <p>{recommendation.message}</p>
             <div className="mei-badge">
               <Icon name="check" />
               Minimum Effective Intervention
@@ -203,45 +234,49 @@ export default async function DashboardPage() {
             <Link className="button secondary" href="/protection">
               View analysis
             </Link>
-            <Link className="button primary" href="/protection?execute=1">
-              <Icon name="shield" />
-              Protect position
-            </Link>
+            {recommendation.cta && recommendation.cta.label !== "View analysis" && (
+              <Link className="button primary" href={recommendation.cta.href}>
+                <Icon name="shield" />
+                {recommendation.cta.label}
+              </Link>
+            )}
           </div>
         </Card>
       ) : (
         <Card>
-          <EmptyState title="No intervention recommended">
-            {data.position.capturedAt
-              ? "The deterministic engine has no current policy-compliant intervention to show."
-              : "Capture a live position to begin deterministic protection analysis."}
+          <EmptyState title="No protection action required">
+            {data.hasAavePosition
+              ? "Your current position has no actionable Minimum Effective Intervention."
+              : "No supported Aave V3 position is available for protection analysis."}
           </EmptyState>
         </Card>
       )}
-      <div className="metric-grid">
-        <Metric
-          label="Total collateral"
-          value={formatCompactUsd(data.position.totalCollateralUsd)}
-          detail="Across Aave V3"
-        />
-        <Metric
-          label="Total debt"
-          value={formatCompactUsd(data.position.totalDebtUsd)}
-          detail="Current borrowed value"
-        />
-        <Metric
-          label="Available borrow"
-          value={formatCompactUsd(data.position.availableBorrowsUsd)}
-          detail="At current collateral"
-        />
-        <Metric
-          label="Protection balances"
-          value={formatCompactUsd(
-            data.position.reserves.reduce((sum, item) => sum + Number(item.walletBalanceUsd), 0),
-          )}
-          detail={`${data.position.reserves.filter((r) => Number(r.walletBalance) > 0).length} available assets`}
-        />
-      </div>
+      {data.hasAavePosition && (
+        <div className="metric-grid">
+          <Metric
+            label="Total collateral"
+            value={formatCompactUsd(data.position.totalCollateralUsd)}
+            detail="Across Aave V3"
+          />
+          <Metric
+            label="Total debt"
+            value={formatCompactUsd(data.position.totalDebtUsd)}
+            detail="Current borrowed value"
+          />
+          <Metric
+            label="Available borrow"
+            value={formatCompactUsd(data.position.availableBorrowsUsd)}
+            detail="At current collateral"
+          />
+          <Metric
+            label="Protection balances"
+            value={formatCompactUsd(
+              data.position.reserves.reduce((sum, item) => sum + Number(item.walletBalanceUsd), 0),
+            )}
+            detail={`${data.position.reserves.filter((r) => Number(r.walletBalance) > 0).length} available assets`}
+          />
+        </div>
+      )}
       <div className="dashboard-bottom">
         <Card>
           <div className="section-heading">
@@ -295,24 +330,27 @@ export default async function DashboardPage() {
           <div className="section-heading">
             <div>
               <span className="label">Integration status</span>
-              <h2>Demo Infrastructure</h2>
+              <h2>Platform availability</h2>
             </div>
             <span className="status-timestamp">Server verified</span>
           </div>
           <div className="connections">
             {[
-              ["RPC", data.rpc],
-              ["Aave", data.aave],
-              ["Database", data.database],
-              ["KeeperHub auth", data.keeperHub.authenticated],
-              ["Sender pin", data.keeperHub.senderVerified],
-              ["Protection policy", data.policy.enabled ? "connected" : "disconnected"],
-            ].map(([label, state]) => (
+              ["RPC", data.rpc, "Available"],
+              ["Aave V3 snapshot", data.aave, "Available"],
+              ["Database", data.database, "Available"],
+              ["KeeperHub", data.keeperHub.authenticated, "Configured"],
+              ["Protection Account", data.keeperHub.senderVerified, "Configured"],
+            ].map(([label, state, connectedLabel]) => (
               <div key={label}>
                 <ConnectionDot state={state as "connected" | "disconnected" | "unknown"} />
                 <span>{label}</span>
                 <b>
-                  {state === "connected" ? "Ready" : state === "unknown" ? "Unknown" : "Attention"}
+                  {state === "connected"
+                    ? connectedLabel
+                    : state === "unknown"
+                      ? "Not verified"
+                      : "Not configured"}
                 </b>
               </div>
             ))}
@@ -321,8 +359,8 @@ export default async function DashboardPage() {
       </div>
       <footer className="page-footer">
         <span>
-          <span className="live-dot" />
-          Protected wallet
+          <span className="status-dot neutral" />
+          Protected Account
         </span>
         <code title={data.position.wallet ?? ""}>{shortAddress(data.position.wallet)}</code>
         <span>Network</span>

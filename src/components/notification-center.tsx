@@ -109,7 +109,7 @@ export function NotificationCenter() {
           </Link>
         </div>
       )}
-      {loading ? (
+      {error ? null : loading ? (
         <div className="notification-loading" role="status" aria-busy="true">
           <span className="button-spinner" aria-hidden="true" />
           Loading notifications…
@@ -157,7 +157,8 @@ export function NotificationCenter() {
         </div>
       ) : (
         <p className="empty-row">
-          No notifications yet. Repetitive monitoring events are deduplicated automatically.
+          <b>No protection events yet.</b> Risk changes, approvals, executions, and blocked actions
+          will appear here.
         </p>
       )}
     </section>

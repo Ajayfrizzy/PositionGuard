@@ -3,8 +3,20 @@ import { cache } from "react";
 import { getPrisma } from "../db/prisma";
 import { shouldShowProtectionAttention } from "./models";
 import type { RiskLevel } from "../protection/types";
+import {
+  mapProtectionIndicator,
+  mapWorkerHealth,
+  type ProtectionIndicator,
+  type WorkerStatus,
+} from "./status";
 
-export type ShellData = { protectionAttention: boolean };
+export type ShellData = {
+  protectionAttention: boolean;
+  policyEnabled: boolean;
+  monitoringActive: boolean;
+  workerStatus: WorkerStatus;
+  protectionIndicator: ProtectionIndicator;
+};
 
 async function loadShellDataUncached(
   protectedAccountId: string,
@@ -12,7 +24,7 @@ async function loadShellDataUncached(
 ): Promise<ShellData> {
   try {
     const db = getPrisma();
-    const [policy, snapshot, decision] = await Promise.all([
+    const [policy, snapshot, decision, monitoringRun] = await Promise.all([
       db.protectionPolicy.findUnique({
         where: { userId_chainId: { userId: protectedAccountId, chainId } },
         select: {
@@ -41,6 +53,11 @@ async function loadShellDataUncached(
           },
         },
       }),
+      db.monitoringRun.findFirst({
+        where: { userId: protectedAccountId, chainId },
+        orderBy: { startedAt: "desc" },
+        select: { status: true, completedAt: true },
+      }),
     ]);
 
     let riskLevel: RiskLevel = decision?.riskLevel ?? "SAFE";
@@ -56,18 +73,45 @@ async function loadShellDataUncached(
               : "CRITICAL";
     }
 
+    const protectionAttention = shouldShowProtectionAttention({
+      policyEnabled: policy?.enabled ?? false,
+      riskLevel,
+      decisionIsCurrent: Boolean(decision && snapshot && decision.snapshotId === snapshot.id),
+      decisionStatus: decision?.status ?? null,
+      hasActionableCandidate: Boolean(decision?.candidates.length),
+    });
+    const worker = mapWorkerHealth({
+      enabled: policy?.enabled ?? false,
+      lastCheck: monitoringRun?.completedAt ?? null,
+      lastRunStatus: monitoringRun?.status ?? null,
+      pollingIntervalMs: Math.max(
+        30_000,
+        Number(process.env.MONITOR_POLL_INTERVAL_MS ?? 60_000) || 60_000,
+      ),
+    });
+    const policyEnabled = policy?.enabled ?? false;
     return {
-      protectionAttention: shouldShowProtectionAttention({
-        policyEnabled: policy?.enabled ?? false,
+      protectionAttention,
+      policyEnabled,
+      monitoringActive: policyEnabled && ["ONLINE", "DEGRADED"].includes(worker.status),
+      workerStatus: worker.status,
+      protectionIndicator: mapProtectionIndicator({
+        enabled: policyEnabled,
+        workerStatus: worker.status,
         riskLevel,
-        decisionIsCurrent: Boolean(decision && snapshot && decision.snapshotId === snapshot.id),
-        decisionStatus: decision?.status ?? null,
-        hasActionableCandidate: Boolean(decision?.candidates.length),
+        attention: protectionAttention,
+        blocked: decision?.status === "PROTECTION_BLOCKED",
       }),
     };
   } catch {
     // Shell presentation must never hold navigation hostage to database recovery.
-    return { protectionAttention: false };
+    return {
+      protectionAttention: false,
+      policyEnabled: false,
+      monitoringActive: false,
+      workerStatus: "NOT_STARTED",
+      protectionIndicator: null,
+    };
   }
 }
 

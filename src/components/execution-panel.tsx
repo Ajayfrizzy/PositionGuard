@@ -175,12 +175,17 @@ export function groupExecutionTimeline(steps: TimelineStep[]): TimelineGroup[] {
 export function ExecutionPanel({
   execution,
   canRequest,
+  mode,
+  hasActionableCandidate,
 }: {
   execution: ExecutionView | null;
   canRequest: boolean;
+  mode: "MONITOR_ONLY" | "REQUIRE_APPROVAL" | "AUTONOMOUS";
+  hasActionableCandidate: boolean;
 }) {
   const [message, setMessage] = useState("");
   const [messageIsError, setMessageIsError] = useState(false);
+  const [technicalError, setTechnicalError] = useState("");
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState<ProtectionExecutionResult | null>(null);
   async function requestProtection() {
@@ -188,6 +193,7 @@ export function ExecutionPanel({
     setBusy(true);
     setMessage("");
     setMessageIsError(false);
+    setTechnicalError("");
     setLive(null);
     try {
       const response = await fetch("/api/protection/execute", {
@@ -198,8 +204,12 @@ export function ExecutionPanel({
       const body = (await response.json()) as ProtectionExecutionResult & {
         error?: { message?: string; code?: string };
       };
-      if (!response.ok)
-        throw new Error(body.error?.message ?? body.error?.code ?? "Simulation failed safely.");
+      if (!response.ok) {
+        setTechnicalError(body.error?.code ?? `HTTP ${response.status}`);
+        throw new Error(
+          body.error?.message ?? "PositionGuard could not complete the protection simulation.",
+        );
+      }
       setLive(body);
       setMessage(
         `Simulation passed. ${body.amount} ${body.asset} would reach projected HF ${body.projectedHealthFactor ?? "unbounded"}. Gas estimate: ${body.simulation.gasEstimate}.`,
@@ -250,35 +260,52 @@ export function ExecutionPanel({
           </section>
         ))}
       </div>
-      <div className="execute-cta" aria-busy={busy}>
-        <p>
-          Simulation reloads policy and Aave state, recomputes MEI, and checks funding and allowance
-          without signing or broadcasting.
-        </p>
-        <LoadingButton
-          className="button primary"
-          pending={busy}
-          pendingLabel="Simulating…"
-          disabled={!canRequest || busy}
-          onClick={() => void requestProtection()}
-        >
-          <Icon name="shield" />
-          Simulate protection
-        </LoadingButton>
-        {busy && (
-          <p className="sr-only" role="status">
-            Protection simulation is running.
+      {canRequest ? (
+        <div className="execute-cta" aria-busy={busy}>
+          <p>
+            {mode === "REQUIRE_APPROVAL"
+              ? "PositionGuard will prepare protection, but you will approve execution. This simulation does not sign or broadcast."
+              : "PositionGuard acts automatically only within configured limits. Simulate the current protection path without signing or broadcasting."}
           </p>
-        )}
-        {message && (
-          <div
-            className={`inline-message ${messageIsError ? "error" : "success"}`}
-            role={messageIsError ? "alert" : "status"}
+          <LoadingButton
+            className="button primary"
+            pending={busy}
+            pendingLabel="Simulating…"
+            disabled={!canRequest || busy}
+            onClick={() => void requestProtection()}
           >
-            {message}
-          </div>
-        )}
-      </div>
+            <Icon name="shield" />
+            {mode === "REQUIRE_APPROVAL" ? "Simulate approval flow" : "Simulate protection"}
+          </LoadingButton>
+          {busy && (
+            <p className="sr-only" role="status">
+              Protection simulation is running.
+            </p>
+          )}
+          {message && (
+            <div
+              className={`inline-message ${messageIsError ? "error" : "success"}`}
+              role={messageIsError ? "alert" : "status"}
+            >
+              {message}
+              {technicalError && (
+                <details>
+                  <summary>Show technical details</summary>
+                  <code>{technicalError}</code>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="empty-row">
+          {!hasActionableCandidate
+            ? "No current Protection Action requires execution."
+            : mode === "MONITOR_ONLY"
+              ? "Monitor Only mode does not submit transactions."
+              : "Enable Protection before requesting a simulation."}
+        </p>
+      )}
     </div>
   );
 }

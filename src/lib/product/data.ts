@@ -258,6 +258,9 @@ async function loadProductDataUncached(
     const position = user?.snapshots[0]
       ? positionFromSnapshot(user.snapshots[0], user.walletAddress)
       : { ...EMPTY_POSITION, wallet: user?.walletAddress ?? configuredWallet ?? null };
+    const hasAavePosition =
+      Boolean(position.capturedAt) &&
+      (Number(position.totalCollateralUsd) > 0 || Number(position.totalDebtUsd) > 0);
     const decision = user?.decisions[0];
     const rawCandidates: CandidateAction[] = (decision?.candidates ?? []).map((candidate) => ({
       id: candidate.id,
@@ -336,7 +339,7 @@ async function loadProductDataUncached(
       decisionStatus: decision?.status ?? null,
       hasActionableCandidate: Boolean(selectedCandidate?.valid),
     });
-    const lastCheck = user?.monitoringRuns[0]?.completedAt?.toISOString() ?? position.capturedAt;
+    const lastCheck = user?.monitoringRuns[0]?.completedAt?.toISOString() ?? null;
     const worker = mapWorkerHealth({
       enabled: policy.enabled,
       lastCheck,
@@ -349,16 +352,22 @@ async function loadProductDataUncached(
     return {
       ...base,
       protectedAccountId: user?.id ?? null,
-      monitoring: { active: policy.enabled, lastCheck, status: worker.status },
+      monitoring: {
+        active: policy.enabled && ["ONLINE", "DEGRADED"].includes(worker.status),
+        lastCheck,
+        status: worker.status,
+      },
       fundingReadiness: decision?.fundingReadiness ?? null,
       database: "connected",
       aave: position.capturedAt ? "connected" : "unknown",
       position,
+      hasAavePosition,
       policy,
       riskLevel,
       analysisHealthFactor: decision?.snapshot.healthFactor?.toString() ?? null,
       candidates,
       selectedCandidate,
+      decisionIsCurrent,
       protectionAttention,
       latestExecution: mappedExecutions[0] ?? null,
       executions: mappedExecutions,
@@ -383,11 +392,13 @@ async function loadProductDataUncached(
         ...EMPTY_POSITION,
         wallet: accountScope === undefined ? (process.env.AAVE_WALLET_ADDRESS ?? null) : null,
       },
+      hasAavePosition: false,
       policy: EMPTY_POLICY,
       riskLevel: "SAFE",
       analysisHealthFactor: null,
       candidates: [],
       selectedCandidate: null,
+      decisionIsCurrent: false,
       protectionAttention: false,
       latestExecution: null,
       executions: [],

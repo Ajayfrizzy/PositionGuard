@@ -139,7 +139,8 @@ button {
   font-weight: 650;
 }
 .live-dot,
-.pulse-dot {
+.pulse-dot,
+.status-dot {
   display: inline-block;
   width: 7px;
   height: 7px;
@@ -147,6 +148,14 @@ button {
   background: var(--green);
   box-shadow: 0 0 8px rgba(32, 230, 155, 0.6);
   margin-right: 8px;
+}
+.status-dot.neutral {
+  background: #65788e;
+  box-shadow: none;
+}
+.status-dot.warn {
+  background: var(--yellow);
+  box-shadow: 0 0 8px rgba(255, 190, 85, 0.5);
 }
 .sidebar-status > p {
   font-size: 10px;
@@ -749,6 +758,17 @@ button {
   background: rgba(255, 190, 85, 0.08);
   border: 1px solid rgba(255, 190, 85, 0.25);
   color: #ffd387;
+}
+.alert.success {
+  background: rgba(31, 230, 154, 0.07);
+  border: 1px solid rgba(31, 230, 154, 0.22);
+  color: #9af1cd;
+}
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: -12px;
+  padding-bottom: 20px;
 }
 .empty {
   text-align: center;
@@ -1641,6 +1661,14 @@ td small {
   border-radius: 50%;
   box-shadow: 0 0 10px var(--green);
   flex: 0 0 auto;
+}
+.nav-alert.warn {
+  background: var(--yellow);
+  box-shadow: 0 0 10px var(--yellow);
+}
+.nav-alert.danger {
+  background: var(--red);
+  box-shadow: 0 0 10px var(--red);
 }
 .mobile-nav-icon {
   position: relative;

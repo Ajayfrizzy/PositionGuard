@@ -5,6 +5,7 @@ import { deterministicExplanation } from "@/lib/agent/explanation";
 import { loadProtectionData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber } from "@/lib/product/format";
 import type { CandidateView } from "@/lib/product/models";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -59,8 +60,30 @@ function CandidateRow({
 
 export default async function ProtectionPage() {
   const data = await loadProtectionData();
+  if (!data.hasAavePosition)
+    return (
+      <div className="page">
+        <PageHeader
+          eyebrow="DETERMINISTIC DEFENSE"
+          title="Protection Analysis"
+          description="Every candidate is evaluated against live position state and hard policy constraints."
+        >
+          <StatusPill tone="neutral">NO POSITION</StatusPill>
+        </PageHeader>
+        <Card>
+          <EmptyState title="No supported Aave V3 position detected">
+            Protection analysis begins after PositionGuard captures supplied collateral or debt.
+          </EmptyState>
+          <div className="empty-actions">
+            <Link className="button primary" href="/position">
+              Refresh position
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
   const selected = data.selectedCandidate;
-  const actionable = data.riskLevel === "SAFE" ? null : selected;
+  const actionable = data.riskLevel !== "SAFE" && data.decisionIsCurrent ? selected : null;
   const analysisHf = data.analysisHealthFactor ?? data.position.healthFactor;
   const explanation = deterministicExplanation({
     healthFactor: data.position.healthFactor,
@@ -92,14 +115,31 @@ export default async function ProtectionPage() {
         title="Protection Analysis"
         description="Every candidate is evaluated against live position state and hard policy constraints."
       >
-        <StatusPill tone={data.riskLevel === "SAFE" ? "good" : selected ? "warn" : "neutral"}>
-          {data.riskLevel === "SAFE"
-            ? "POSITION SAFE"
-            : selected
-              ? "INTERVENTION READY"
-              : "NO ACTION READY"}
+        <StatusPill
+          tone={
+            !data.hasAavePosition
+              ? "neutral"
+              : data.riskLevel === "SAFE"
+                ? "good"
+                : actionable && data.policy.enabled
+                  ? "warn"
+                  : "neutral"
+          }
+        >
+          {!data.hasAavePosition
+            ? "NO POSITION"
+            : data.riskLevel === "SAFE"
+              ? "POSITION SAFE"
+              : actionable && data.policy.enabled
+                ? "INTERVENTION AVAILABLE"
+                : "NO ACTION READY"}
         </StatusPill>
       </PageHeader>
+      {data.riskLevel === "SAFE" && data.hasAavePosition && (
+        <div className="alert success">
+          Your position is currently within the configured safety target.
+        </div>
+      )}
       <div className="analysis-summary">
         <Card>
           <span className="label">Current health factor</span>
@@ -221,7 +261,16 @@ export default async function ProtectionPage() {
             </StatusPill>
           )}
         </div>
-        <ExecutionPanel execution={data.latestExecution} canRequest={data.policy.enabled} />
+        <ExecutionPanel
+          execution={data.latestExecution}
+          canRequest={
+            Boolean(actionable) &&
+            data.policy.enabled &&
+            data.policy.executionMode !== "MONITOR_ONLY"
+          }
+          mode={data.policy.executionMode}
+          hasActionableCandidate={Boolean(actionable)}
+        />
       </Card>
       {(data.latestExecution?.status === "CANCELLED" || data.positionChangedAt) && (
         <div className="stale-state">

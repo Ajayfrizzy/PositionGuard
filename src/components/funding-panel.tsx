@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { StatusPill } from "./ui";
 import { LoadingButton } from "./loading-button";
-import { mapFundingReadiness, type FundingUxStatus } from "@/lib/product/status";
+import { fundingCta, mapFundingReadiness, type FundingUxStatus } from "@/lib/product/status";
 type Readiness = {
   state: string;
   requiredAsset: string;
@@ -28,14 +28,19 @@ export function FundingPanel({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [technicalError, setTechnicalError] = useState("");
   async function check() {
     if (busy) return;
     setBusy(true);
     setError("");
+    setTechnicalError("");
     try {
       const response = await fetch(`/api/funding-readiness?chainId=${chainId}`);
       const body = (await response.json()) as typeof data & { error?: { code?: string } };
-      if (!response.ok || !body) throw new Error(body?.error?.code ?? "Readiness check failed");
+      if (!response.ok || !body) {
+        setTechnicalError(body?.error?.code ?? `HTTP ${response.status}`);
+        throw new Error("PositionGuard could not verify Protection Funding.");
+      }
       setData(body);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Readiness check failed");
@@ -51,6 +56,7 @@ export function FundingPanel({
       : ux.status === "NOT_CHECKED" || ux.status === "NO_ACTION_REQUIRED"
         ? "neutral"
         : "warn";
+  const cta = fundingCta(ux.status);
   return (
     <section className="card funding-panel">
       <div className="section-heading">
@@ -91,7 +97,7 @@ export function FundingPanel({
                 <dd>{readiness?.requiredAllowance ?? "—"}</dd>
               </div>
               <div>
-                <dt>Funding destination</dt>
+                <dt>Protection Account</dt>
                 <dd>
                   <code>{readiness?.sender ?? "Unavailable"}</code>
                 </dd>
@@ -104,7 +110,10 @@ export function FundingPanel({
               </div>
             </dl>
           )}
-          {ux.action && (
+          {ux.action && ux.status === "NO_ACTION_REQUIRED" && (
+            <p className="empty-row">{ux.action}</p>
+          )}
+          {ux.action && ux.status !== "NO_ACTION_REQUIRED" && (
             <div className="funding-guidance">
               <b>What to do next</b>
               <p>{ux.action}</p>
@@ -121,20 +130,28 @@ export function FundingPanel({
       ) : (
         <p className="empty-row">{ux.explanation}</p>
       )}
-      <LoadingButton
-        type="button"
-        className="button secondary"
-        pending={busy}
-        pendingLabel="Checking funding…"
-        disabled={busy}
-        onClick={() => void check()}
-      >
-        Check funding readiness
-      </LoadingButton>
+      {cta && (
+        <LoadingButton
+          type="button"
+          className="button secondary"
+          pending={busy}
+          pendingLabel="Checking funding…"
+          disabled={busy}
+          onClick={() => void check()}
+        >
+          {cta}
+        </LoadingButton>
+      )}
       {error && (
-        <p className="form-status error" role="alert">
-          {error}
-        </p>
+        <div className="form-status error" role="alert">
+          <p>{error}</p>
+          {technicalError && (
+            <details>
+              <summary>Show technical details</summary>
+              <code>{technicalError}</code>
+            </details>
+          )}
+        </div>
       )}
     </section>
   );

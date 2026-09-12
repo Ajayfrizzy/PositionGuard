@@ -1,5 +1,6 @@
 import { Card, EmptyState, Metric, PageHeader, StatusPill } from "@/components/ui";
 import { loadPositionData as loadProductData } from "@/lib/product/current-data";
+import { RefreshPositionButton } from "@/components/refresh-position-button";
 import {
   formatCompactUsd,
   formatNumber,
@@ -13,6 +14,27 @@ export default async function PositionPage() {
   const supplied = data.position.reserves.filter((r) => Number(r.suppliedBalance) > 0);
   const borrowed = data.position.reserves.filter((r) => Number(r.debtUsd) > 0);
   const balances = data.position.reserves.filter((r) => Number(r.walletBalance) > 0);
+  if (!data.hasAavePosition)
+    return (
+      <div className="page">
+        <PageHeader
+          eyebrow="AAVE V3 · BASE SEPOLIA"
+          title="Position Details"
+          description="Protocol-level position data captured at a consistent block."
+        >
+          <StatusPill tone="neutral">NO POSITION</StatusPill>
+        </PageHeader>
+        <Card>
+          <EmptyState title="No supported Aave V3 position detected.">
+            PositionGuard did not find supplied collateral or debt in a supported Aave V3 reserve
+            for {shortAddress(data.position.wallet)}.
+          </EmptyState>
+          <div className="empty-actions">
+            <RefreshPositionButton />
+          </div>
+        </Card>
+      </div>
+    );
   return (
     <div className="page">
       <PageHeader
@@ -48,7 +70,7 @@ export default async function PositionPage() {
       </div>
       <Card className="position-identity">
         <div>
-          <span className="label">Protected wallet</span>
+          <span className="label">Protected Account</span>
           <code>{data.position.wallet ?? "Not configured"}</code>
         </div>
         <div>
