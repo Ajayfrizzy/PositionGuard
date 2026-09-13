@@ -53,3 +53,14 @@ export function timeAgo(input: Date | string) {
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
 }
+
+export function formatTimestamp(input: Date | string | null | undefined) {
+  if (!input) return "Unavailable";
+  const date = new Date(input);
+  if (!Number.isFinite(date.getTime())) return "Unavailable";
+  return `${new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(date)} UTC`;
+}

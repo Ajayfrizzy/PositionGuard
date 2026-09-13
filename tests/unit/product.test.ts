@@ -8,6 +8,7 @@ import {
   formatCompactUsd,
   formatNumber,
   formatPercentageRatio,
+  formatTimestamp,
   shortAddress,
   transactionExplorerUrl,
 } from "../../src/lib/product/format";
@@ -46,6 +47,7 @@ const candidate = (patch: Partial<CandidateAction> = {}): CandidateAction => ({
 });
 const execution = (patch: Partial<ExecutionView> = {}): ExecutionView => ({
   id: "e1",
+  decisionId: "decision-1",
   status: "CONFIRMED",
   simulationStatus: "SUCCEEDED",
   action: "REPAY_DEBT",
@@ -79,6 +81,10 @@ describe("product data presentation", () => {
   );
   it("shortens configured wallet addresses", () =>
     expect(shortAddress("0x1234567890abcdef")).toBe("0x1234…cdef"));
+  it("formats persisted timestamps with explicit UTC context", () => {
+    expect(formatTimestamp("2026-09-08T10:01:00.000Z")).toContain("UTC");
+    expect(formatTimestamp(null)).toBe("Unavailable");
+  });
   it("labels the selected deterministic candidate", () => {
     const mapped = mapCandidates(
       [

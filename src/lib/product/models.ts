@@ -46,6 +46,7 @@ export interface CandidateView extends CandidateAction {
 }
 export interface ExecutionView {
   id: string;
+  decisionId: string;
   status: "NOT_STARTED" | "SUBMITTED" | "CONFIRMED" | "FAILED" | "UNCONFIRMED" | "CANCELLED";
   simulationStatus: "NOT_STARTED" | "SUCCEEDED" | "FAILED";
   action: string;
@@ -61,6 +62,17 @@ export interface ExecutionView {
   failureReason: string | null;
   createdAt: string;
   completedAt: string | null;
+}
+export interface ProtectionDecisionView {
+  id: string;
+  riskLevel: RiskLevel;
+  status: string;
+  createdAt: string;
+  snapshotBlockNumber: string | null;
+  snapshotHealthFactor: string | null;
+  expectedHealthFactor: string | null;
+  candidates: CandidateView[];
+  selectedCandidate: CandidateView | null;
 }
 export interface AuditView {
   id: string;
@@ -82,6 +94,10 @@ export interface ProductData {
   candidates: CandidateView[];
   selectedCandidate: CandidateView | null;
   decisionIsCurrent: boolean;
+  currentDecision: ProtectionDecisionView | null;
+  historicalDecision: ProtectionDecisionView | null;
+  currentSelectedCandidate: CandidateView | null;
+  currentDecisionIsActionable: boolean;
   protectionAttention: boolean;
   latestExecution: ExecutionView | null;
   executions: ExecutionView[];
@@ -98,6 +114,31 @@ export interface ProductData {
   monitoring: { active: boolean; lastCheck: string | null; status: string | null };
   fundingReadiness: string | null;
 }
+
+export function protectionDecisionState(
+  decision: ProtectionDecisionView | null,
+  currentRiskLevel: RiskLevel,
+  decisionIsCurrent: boolean,
+) {
+  const currentDecisionIsActionable = Boolean(
+    decisionIsCurrent && currentRiskLevel !== "SAFE" && decision?.selectedCandidate,
+  );
+  return {
+    currentDecision: decisionIsCurrent ? decision : null,
+    historicalDecision:
+      decision &&
+      (!decisionIsCurrent || (currentRiskLevel === "SAFE" && decision.selectedCandidate))
+        ? decision
+        : null,
+    currentSelectedCandidate: currentDecisionIsActionable
+      ? (decision?.selectedCandidate ?? null)
+      : null,
+    currentDecisionIsActionable,
+  };
+}
+
+export const candidateDisplayLabel = (candidate: CandidateView, historical: boolean) =>
+  historical && candidate.state === "selected" ? "Previously selected" : candidate.label;
 
 export function protectionRecommendation(input: {
   hasCandidate: boolean;

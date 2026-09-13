@@ -3,8 +3,8 @@ import { ExecutionPanel } from "@/components/execution-panel";
 import { Icon } from "@/components/icons";
 import { deterministicExplanation } from "@/lib/agent/explanation";
 import { loadProtectionData } from "@/lib/product/current-data";
-import { formatCompactUsd, formatNumber } from "@/lib/product/format";
-import type { CandidateView } from "@/lib/product/models";
+import { formatCompactUsd, formatNumber, formatTimestamp } from "@/lib/product/format";
+import { candidateDisplayLabel, type CandidateView } from "@/lib/product/models";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -12,12 +12,14 @@ export const dynamic = "force-dynamic";
 function CandidateRow({
   candidate,
   analysisHf,
+  historical = false,
 }: {
   candidate: CandidateView;
   analysisHf: string | null;
+  historical?: boolean;
 }) {
   return (
-    <article className={`candidate ${candidate.state}`}>
+    <article className={`candidate ${candidate.state}${historical ? " historical" : ""}`}>
       <div className="candidate-rank">{candidate.rank}</div>
       <div className="candidate-action">
         <span>{candidate.type === "REPAY_DEBT" ? "Repay debt" : "Add collateral"}</span>
@@ -50,7 +52,7 @@ function CandidateRow({
                   : "blue"
           }
         >
-          {candidate.label}
+          {candidateDisplayLabel(candidate, historical)}
         </StatusPill>
         <p>{candidate.reason}</p>
       </div>
@@ -82,18 +84,30 @@ export default async function ProtectionPage() {
         </Card>
       </div>
     );
-  const selected = data.selectedCandidate;
-  const actionable = data.riskLevel !== "SAFE" && data.decisionIsCurrent ? selected : null;
-  const analysisHf = data.analysisHealthFactor ?? data.position.healthFactor;
+  const actionable = data.currentSelectedCandidate;
+  const currentDecision = data.currentDecision;
+  const historicalDecision = data.historicalDecision;
+  const currentCandidates = data.riskLevel === "SAFE" ? [] : (currentDecision?.candidates ?? []);
+  const analysisHf = currentDecision?.snapshotHealthFactor ?? data.position.healthFactor;
   const explanation = deterministicExplanation({
     healthFactor: data.position.healthFactor,
     target: data.policy.targetHealthFactor,
     riskLevel: data.riskLevel,
-    candidates: data.candidates,
+    candidates: currentCandidates,
     selected: actionable,
     protectionEnabled: data.policy.enabled,
   });
-  const closestRejected = data.candidates
+  const historicalExplanation = historicalDecision
+    ? deterministicExplanation({
+        healthFactor: historicalDecision.snapshotHealthFactor,
+        target: data.policy.targetHealthFactor,
+        riskLevel: historicalDecision.riskLevel,
+        candidates: historicalDecision.candidates,
+        selected: historicalDecision.selectedCandidate,
+        protectionEnabled: data.policy.enabled,
+      })
+    : null;
+  const closestRejected = currentCandidates
     .filter((candidate) => candidate.state === "rejected")
     .sort(
       (a, b) =>
@@ -102,11 +116,18 @@ export default async function ProtectionPage() {
     )
     .slice(0, 2);
   const featuredIds = new Set([
-    ...(selected ? [selected.id] : []),
+    ...(actionable ? [actionable.id] : []),
     ...closestRejected.map((candidate) => candidate.id),
   ]);
-  const featured = [...(selected ? [selected] : []), ...closestRejected];
-  const remaining = data.candidates.filter((candidate) => !featuredIds.has(candidate.id));
+  const featured = [...(actionable ? [actionable] : []), ...closestRejected];
+  const remaining = currentCandidates.filter((candidate) => !featuredIds.has(candidate.id));
+  const currentExecution =
+    data.currentDecisionIsActionable &&
+    data.latestExecution &&
+    data.latestExecution.decisionId === currentDecision?.id
+      ? data.latestExecution
+      : null;
+  const historicalExecution = currentExecution ? null : data.latestExecution;
 
   return (
     <div className="page">
@@ -137,7 +158,8 @@ export default async function ProtectionPage() {
       </PageHeader>
       {data.riskLevel === "SAFE" && data.hasAavePosition && (
         <div className="alert success">
-          Your position is currently within the configured safety target.
+          <b>No protection action required.</b>
+          <span>Your current position is above the configured safety target.</span>
         </div>
       )}
       <div className="analysis-summary">
@@ -164,71 +186,150 @@ export default async function ProtectionPage() {
           <Icon name="shield" />
         </div>
         <div>
-          <p className="eyebrow">MINIMUM EFFECTIVE INTERVENTION</p>
-          <h2>The smallest action that restores safety.</h2>
+          <p className="eyebrow">CURRENT PROTECTION DECISION</p>
+          <h2>{actionable ? "Minimum Effective Intervention" : "No action required"}</h2>
           <p>
-            Minimum Effective Intervention is the smallest policy-compliant action expected to
-            restore the position to its configured safety target. Rule-based safety logic—not
-            AI—selects the amount.
+            {actionable
+              ? "This is the smallest policy-compliant action for the current position. Rule-based safety logic—not AI—selects the amount."
+              : "PositionGuard does not recommend an intervention for the current position."}
           </p>
         </div>
-        {selected && (
+        {actionable && (
           <div className="selected-mini">
-            <span>
-              {data.riskLevel === "SAFE" ? "Latest verified decision" : "Selected action"}
-            </span>
+            <span>Selected action</span>
             <b>
-              {selected.tokenAmount ?? selected.amount} {selected.assetSymbol ?? selected.asset}
+              {actionable.tokenAmount ?? actionable.amount}{" "}
+              {actionable.assetSymbol ?? actionable.asset}
             </b>
-            <small>Projected HF {formatNumber(selected.expectedHealthFactor, 4)}</small>
+            <small>Projected HF {formatNumber(actionable.expectedHealthFactor, 4)}</small>
           </div>
         )}
       </Card>
-      <Card>
-        <div className="section-heading">
-          <div>
-            <span className="label">Candidate evaluation</span>
-            <h2>{data.candidates.length} actions evaluated</h2>
-            <p className="section-description">
-              Selected action first, followed by the nearest rejected alternatives.
-            </p>
-          </div>
-          <StatusPill tone="blue">RULE-BASED</StatusPill>
-        </div>
-        {data.candidates.length ? (
-          <>
-            <div className="candidate-list featured-candidates">
-              {featured.map((candidate) => (
-                <CandidateRow candidate={candidate} analysisHf={analysisHf} key={candidate.id} />
-              ))}
+      {currentCandidates.length > 0 && (
+        <Card>
+          <div className="section-heading">
+            <div>
+              <span className="label">Candidate evaluation</span>
+              <h2>{currentCandidates.length} current actions evaluated</h2>
+              <p className="section-description">
+                Selected action first, followed by the nearest rejected alternatives.
+              </p>
             </div>
-            {remaining.length > 0 && (
-              <details className="candidate-evidence">
-                <summary>
-                  <span>
-                    Review {remaining.length} remaining candidate{remaining.length === 1 ? "" : "s"}
-                  </span>
-                  <small>Full policy and projection evidence</small>
-                </summary>
-                <div className="candidate-list">
-                  {remaining.map((candidate) => (
-                    <CandidateRow
-                      candidate={candidate}
-                      analysisHf={analysisHf}
-                      key={candidate.id}
-                    />
-                  ))}
+            <StatusPill tone="blue">RULE-BASED</StatusPill>
+          </div>
+          {currentCandidates.length ? (
+            <>
+              <div className="candidate-list featured-candidates">
+                {featured.map((candidate) => (
+                  <CandidateRow candidate={candidate} analysisHf={analysisHf} key={candidate.id} />
+                ))}
+              </div>
+              {remaining.length > 0 && (
+                <details className="candidate-evidence">
+                  <summary>
+                    <span>
+                      Review {remaining.length} remaining candidate
+                      {remaining.length === 1 ? "" : "s"}
+                    </span>
+                    <small>Full policy and projection evidence</small>
+                  </summary>
+                  <div className="candidate-list">
+                    {remaining.map((candidate) => (
+                      <CandidateRow
+                        candidate={candidate}
+                        analysisHf={analysisHf}
+                        key={candidate.id}
+                      />
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
+          ) : (
+            <EmptyState title="No evaluated candidates">
+              A stored protection decision with candidate records is required. PositionGuard never
+              fabricates example actions.
+            </EmptyState>
+          )}
+        </Card>
+      )}
+      {historicalDecision && (
+        <Card className="historical-analysis">
+          <div className="section-heading">
+            <div>
+              <span className="label">PREVIOUS PROTECTION ANALYSIS</span>
+              <h2>Latest protection history</h2>
+              <p className="section-description">Based on an earlier position snapshot.</p>
+            </div>
+            <StatusPill tone="neutral">HISTORICAL</StatusPill>
+          </div>
+          <div className="historical-decision-grid">
+            <div>
+              <span>Previous risk event</span>
+              <b>{historicalDecision.riskLevel}</b>
+              <small>HF {formatNumber(historicalDecision.snapshotHealthFactor, 4)}</small>
+            </div>
+            <div>
+              <span>Previous recommendation</span>
+              {historicalDecision.selectedCandidate ? (
+                <b>
+                  {historicalDecision.selectedCandidate.type === "REPAY_DEBT" ? "Repay" : "Supply"}{" "}
+                  {historicalDecision.selectedCandidate.tokenAmount ??
+                    historicalDecision.selectedCandidate.amount}{" "}
+                  {historicalDecision.selectedCandidate.assetSymbol ??
+                    historicalDecision.selectedCandidate.asset}
+                </b>
+              ) : (
+                <b>No action selected</b>
+              )}
+              <small>
+                Projected HF{" "}
+                {formatNumber(historicalDecision.selectedCandidate?.expectedHealthFactor, 4)}
+              </small>
+            </div>
+            <div>
+              <span>Decision status</span>
+              <b>{historicalDecision.status.replaceAll("_", " ")}</b>
+              <small>Decision created: {formatTimestamp(historicalDecision.createdAt)}</small>
+            </div>
+            <div>
+              <span>Snapshot block</span>
+              <b>{historicalDecision.snapshotBlockNumber ?? "Unavailable"}</b>
+              <small>Historical evidence</small>
+            </div>
+          </div>
+          {historicalDecision.candidates.length > 0 && (
+            <details className="candidate-evidence historical-candidates">
+              <summary>
+                <span>View previous candidate analysis</span>
+                <small>These are not current execution recommendations.</small>
+              </summary>
+              <div className="historical-candidate-heading">
+                <span className="label">Previous candidate evaluation</span>
+                <p className="section-description">
+                  These actions were evaluated during the latest historical protection decision.
+                </p>
+              </div>
+              <div className="candidate-list">
+                {historicalDecision.candidates.map((candidate) => (
+                  <CandidateRow
+                    candidate={candidate}
+                    analysisHf={historicalDecision.snapshotHealthFactor}
+                    historical
+                    key={candidate.id}
+                  />
+                ))}
+              </div>
+              {historicalExplanation && (
+                <div className="historical-explanation">
+                  <h3>Why this action was selected</h3>
+                  <p>{historicalExplanation.whyThisAction}</p>
                 </div>
-              </details>
-            )}
-          </>
-        ) : (
-          <EmptyState title="No evaluated candidates">
-            A stored protection decision with candidate records is required. PositionGuard never
-            fabricates example actions.
-          </EmptyState>
-        )}
-      </Card>
+              )}
+            </details>
+          )}
+        </Card>
+      )}
       <div className="explanation-card">
         <span className="eyebrow">SAFETY EXPLANATION · RULE-BASED</span>
         <h2>Why this matters</h2>
@@ -253,24 +354,24 @@ export default async function ProtectionPage() {
         <div className="section-heading">
           <div>
             <span className="label">Controlled execution</span>
-            <h2>Protection Execution</h2>
+            <h2>Current Protection Execution</h2>
           </div>
-          {data.latestExecution && (
-            <StatusPill tone={data.latestExecution.status === "CONFIRMED" ? "good" : "neutral"}>
-              {data.latestExecution.status}
+          {currentExecution && (
+            <StatusPill tone={currentExecution.status === "CONFIRMED" ? "good" : "neutral"}>
+              {currentExecution.status}
             </StatusPill>
           )}
         </div>
-        <ExecutionPanel
-          execution={data.latestExecution}
-          canRequest={
-            Boolean(actionable) &&
-            data.policy.enabled &&
-            data.policy.executionMode !== "MONITOR_ONLY"
-          }
-          mode={data.policy.executionMode}
-          hasActionableCandidate={Boolean(actionable)}
-        />
+        {actionable ? (
+          <ExecutionPanel
+            execution={currentExecution}
+            canRequest={data.policy.enabled && data.policy.executionMode !== "MONITOR_ONLY"}
+            mode={data.policy.executionMode}
+            hasActionableCandidate
+          />
+        ) : (
+          <p className="empty-row">No current protection action requires execution.</p>
+        )}
       </Card>
       {(data.latestExecution?.status === "CANCELLED" || data.positionChangedAt) && (
         <div className="stale-state">
@@ -285,37 +386,66 @@ export default async function ProtectionPage() {
           </div>
         </div>
       )}
-      {data.latestExecution?.status === "CONFIRMED" && (
+      {historicalExecution?.status === "CONFIRMED" && (
         <Card className="success-card">
           <div className="success-mark">
             <Icon name="check" />
           </div>
           <div>
-            <p className="eyebrow">PROTECTION SUCCESSFUL</p>
+            <p className="eyebrow">PREVIOUS PROTECTION SUCCESS</p>
             <h2>
-              Health factor {formatNumber(data.latestExecution.healthFactorBefore, 4)} →{" "}
-              {formatNumber(data.latestExecution.healthFactorAfter, 4)}
+              Health factor {formatNumber(historicalExecution.healthFactorBefore, 4)} →{" "}
+              {formatNumber(historicalExecution.healthFactorAfter, 4)}
             </h2>
             <p>
-              {data.latestExecution.action === "REPAY_DEBT" ? "Repayment" : "Collateral supplied"}:{" "}
+              {historicalExecution.action === "REPAY_DEBT" ? "Repayment" : "Collateral supplied"}:{" "}
               <b>
-                {data.latestExecution.displayAmount} {data.latestExecution.asset}
+                {historicalExecution.displayAmount} {historicalExecution.asset}
               </b>
             </p>
+            <p>This execution belongs to a previous protection event.</p>
+            <small>
+              Execution completed:{" "}
+              {formatTimestamp(historicalExecution.completedAt ?? historicalExecution.createdAt)}
+            </small>
           </div>
           <div className="success-proof">
             <span>
-              KeeperHub <b>{data.latestExecution.keeperHubExecutionId ? "Verified" : "—"}</b>
+              KeeperHub <b>{historicalExecution.keeperHubExecutionId ? "Verified" : "—"}</b>
+            </span>
+            {historicalExecution.keeperHubExecutionId && (
+              <code>{historicalExecution.keeperHubExecutionId}</code>
+            )}
+            <span>
+              Receipt <b>{historicalExecution.receiptVerified ? "Verified" : "Pending"}</b>
             </span>
             <span>
-              Aave <b>{data.latestExecution.receiptVerified ? "Receipt confirmed" : "Pending"}</b>
+              Aave event <b>{historicalExecution.receiptVerified ? "Verified" : "Pending"}</b>
             </span>
-            {data.latestExecution.transactionLink && (
-              <a href={data.latestExecution.transactionLink} target="_blank" rel="noreferrer">
+            {historicalExecution.transactionLink && (
+              <a href={historicalExecution.transactionLink} target="_blank" rel="noreferrer">
                 View transaction <Icon name="external" />
               </a>
             )}
           </div>
+        </Card>
+      )}
+      {historicalExecution && historicalExecution.status !== "CONFIRMED" && (
+        <Card className="historical-execution">
+          <div className="section-heading">
+            <div>
+              <span className="label">PREVIOUS PROTECTION EXECUTION</span>
+              <h2>Previous Protection Execution</h2>
+              <p className="section-description">
+                This execution belongs to a previous protection event.
+              </p>
+            </div>
+            <StatusPill tone="neutral">{historicalExecution.status}</StatusPill>
+          </div>
+          <p>
+            Execution completed:{" "}
+            {formatTimestamp(historicalExecution.completedAt ?? historicalExecution.createdAt)}
+          </p>
         </Card>
       )}
     </div>

@@ -7,6 +7,7 @@ import { getPrisma } from "../db/prisma";
 import type { CandidateAction, RiskLevel } from "../protection/types";
 import {
   mapCandidates,
+  protectionDecisionState,
   shouldShowProtectionAttention,
   type ProductData,
   type ProductPolicy,
@@ -306,6 +307,7 @@ async function loadProductDataUncached(
     const candidates = mapCandidates(rawCandidates, selectedRaw?.id ?? null);
     const mappedExecutions = executions.map((execution) => ({
       id: execution.id,
+      decisionId: execution.decisionId,
       status: execution.executionStatus,
       simulationStatus: execution.simulationStatus,
       action: execution.action,
@@ -348,6 +350,20 @@ async function loadProductDataUncached(
     const decisionIsCurrent = Boolean(
       decision && user?.snapshots[0] && decision.snapshotId === user.snapshots[0].id,
     );
+    const decisionView = decision
+      ? {
+          id: decision.id,
+          riskLevel: decision.riskLevel,
+          status: decision.status,
+          createdAt: decision.createdAt.toISOString(),
+          snapshotBlockNumber: decision.snapshot.blockNumber?.toString() ?? null,
+          snapshotHealthFactor: decision.snapshot.healthFactor?.toString() ?? null,
+          expectedHealthFactor: decision.expectedHealthFactor?.toString() ?? null,
+          candidates,
+          selectedCandidate,
+        }
+      : null;
+    const decisionState = protectionDecisionState(decisionView, riskLevel, decisionIsCurrent);
     const protectionAttention = shouldShowProtectionAttention({
       policyEnabled: policy.enabled,
       riskLevel,
@@ -384,6 +400,7 @@ async function loadProductDataUncached(
       candidates,
       selectedCandidate,
       decisionIsCurrent,
+      ...decisionState,
       protectionAttention,
       latestExecution: mappedExecutions[0] ?? null,
       executions: mappedExecutions,
@@ -415,6 +432,10 @@ async function loadProductDataUncached(
       candidates: [],
       selectedCandidate: null,
       decisionIsCurrent: false,
+      currentDecision: null,
+      historicalDecision: null,
+      currentSelectedCandidate: null,
+      currentDecisionIsActionable: false,
       protectionAttention: false,
       latestExecution: null,
       executions: [],

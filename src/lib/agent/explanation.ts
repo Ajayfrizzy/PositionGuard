@@ -36,6 +36,25 @@ export function deterministicExplanation(input: {
   protectionEnabled: boolean;
 }): ProtectionExplanation {
   const selected = input.selected;
+  if (input.riskLevel === "SAFE")
+    return {
+      riskSummary:
+        input.healthFactor === null
+          ? "The current position has no finite health factor requiring protection."
+          : `Your current health factor is above the configured target of ${input.target}.`,
+      selectionReason: "No protection action is required.",
+      policySummary:
+        "PositionGuard evaluated the current Aave position against the saved protection policy and found no current intervention requirement.",
+      outcomeSummary: null,
+      referencedCandidateIds: [],
+      whyRiskChanged:
+        input.healthFactor === null
+          ? "The current position has no active debt requiring protection."
+          : "Your current health factor is above the configured target.",
+      whyThisAction: "No protection action is required.",
+      rejectedReasons: [],
+      whatHappensNext: "PositionGuard will continue monitoring for future risk.",
+    };
   return {
     riskSummary:
       input.healthFactor === null
