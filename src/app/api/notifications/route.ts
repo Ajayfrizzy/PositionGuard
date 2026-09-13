@@ -10,15 +10,23 @@ export async function GET(request: Request) {
     .safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success)
     return Response.json({ error: { code: "INVALID_REQUEST" } }, { status: 400 });
-  const rows = await getPrisma().notification.findMany({
-    where: {
-      userId: auth.session.protectedAccountId,
-      ...(parsed.data.unreadOnly === "true" ? { readAt: null } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
-  return Response.json({ notifications: rows }, { headers: { "Cache-Control": "no-store" } });
+  const userId = auth.session.protectedAccountId;
+  const db = getPrisma();
+  const [rows, unreadCount] = await Promise.all([
+    db.notification.findMany({
+      where: {
+        userId,
+        ...(parsed.data.unreadOnly === "true" ? { readAt: null } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+    db.notification.count({ where: { userId, readAt: null } }),
+  ]);
+  return Response.json(
+    { notifications: rows, unreadCount },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 export async function PATCH(request: Request) {
   const auth = await requireRequestSession(request);

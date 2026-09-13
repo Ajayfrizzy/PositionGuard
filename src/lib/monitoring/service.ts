@@ -10,6 +10,13 @@ import {
 } from "../funding/readiness";
 import { executeAutonomousProtection, executeProtection } from "../execution/orchestrator";
 import { notify } from "../notifications/service";
+import {
+  actionNotificationIdentity,
+  shouldNotifyBlocker,
+  shouldNotifyRecovery,
+  shouldNotifyRisk,
+  type NotificationState,
+} from "../notifications/transitions";
 import type { ProtectionExecutionResult } from "../execution/types";
 import type { Prisma } from "../../generated/prisma/client";
 import { executionDisposition } from "../policies/execution-mode";
@@ -179,6 +186,55 @@ async function safeNotify(event: Parameters<typeof notify>[0]) {
   }
 }
 
+async function previousNotificationState(
+  userId: string,
+  chainId: number,
+  currentRunId: string,
+): Promise<NotificationState> {
+  const db = getPrisma();
+  const previousRun = await db.monitoringRun.findFirst({
+    where: {
+      userId,
+      chainId,
+      id: { not: currentRunId },
+      completedAt: { not: null },
+      snapshotId: { not: null },
+    },
+    orderBy: { startedAt: "desc" },
+  });
+  if (!previousRun)
+    return { riskLevel: null, blockerReason: null, actionIdentity: null, approvalPending: false };
+  if (!previousRun.decisionId)
+    return { riskLevel: "SAFE", blockerReason: null, actionIdentity: null, approvalPending: false };
+  const decision = await db.protectionDecision.findUnique({
+    where: { id: previousRun.decisionId },
+    select: {
+      riskLevel: true,
+      status: true,
+      blockerReason: true,
+      selectedAction: true,
+      selectedAsset: true,
+      selectedAmount: true,
+    },
+  });
+  if (!decision)
+    return { riskLevel: null, blockerReason: null, actionIdentity: null, approvalPending: false };
+  const actionIdentity =
+    decision.selectedAction && decision.selectedAsset && decision.selectedAmount
+      ? actionNotificationIdentity({
+          type: decision.selectedAction,
+          asset: decision.selectedAsset,
+          amount: decision.selectedAmount.toString(),
+        })
+      : null;
+  return {
+    riskLevel: decision.riskLevel,
+    blockerReason: decision.status === "PROTECTION_BLOCKED" ? decision.blockerReason : null,
+    actionIdentity,
+    approvalPending: previousRun.status === "READY_TO_EXECUTE",
+  };
+}
+
 export async function runProtectedAccountCycle(
   target: ProtectedAccountTarget,
   dependencies: AutonomousMonitoringDependencies = autonomousDefaults,
@@ -188,6 +244,11 @@ export async function runProtectedAccountCycle(
     data: { userId: target.protectedAccountId, chainId: target.chainId, status: "RUNNING" },
   });
   try {
+    const previousState = await previousNotificationState(
+      target.protectedAccountId,
+      target.chainId,
+      run.id,
+    );
     const prepared = await dependencies.prepare({
       walletAddress: target.walletAddress,
       chainId: target.chainId,
@@ -197,23 +258,41 @@ export async function runProtectedAccountCycle(
     let readiness: FundingReadiness | null = null,
       execution: ProtectionExecutionResult | null = null,
       blockerReason: string | null = null;
-    if (result.riskLevel !== "SAFE") {
+    if (shouldNotifyRecovery(previousState, result.riskLevel)) {
       await safeNotify({
         userId: target.protectedAccountId,
-        type: `RISK_${result.riskLevel}` as "RISK_WATCH" | "RISK_HIGH" | "RISK_CRITICAL",
-        title: `${result.riskLevel} position risk`,
-        message: `Health factor ${prepared.position.account.healthFactor ?? "unbounded"} requires attention.`,
-        dedupeKey: `${target.protectedAccountId}:${target.chainId}:risk:${result.riskLevel}`,
-        metadata: { decisionId: persisted.decisionId },
+        type: "POSITION_CHANGED",
+        title: "Position returned to safe range",
+        message: "Your health factor is back within the configured safety range.",
+        dedupeKey: `${target.protectedAccountId}:${target.chainId}:recovery:${run.id}`,
+        metadata: { snapshotId: persisted.snapshotId },
       });
-      if (result.selectedCandidate)
+    }
+    if (result.riskLevel !== "SAFE") {
+      if (shouldNotifyRisk(previousState, result.riskLevel))
+        await safeNotify({
+          userId: target.protectedAccountId,
+          type: `RISK_${result.riskLevel}` as "RISK_WATCH" | "RISK_HIGH" | "RISK_CRITICAL",
+          title: `${result.riskLevel} position risk`,
+          message: `Health factor ${prepared.position.account.healthFactor ?? "unbounded"} requires attention.`,
+          dedupeKey: `${target.protectedAccountId}:${target.chainId}:risk:${result.riskLevel}:${run.id}`,
+          metadata: { decisionId: persisted.decisionId },
+        });
+      const selectedActionIdentity = result.selectedCandidate
+        ? actionNotificationIdentity({
+            type: result.selectedCandidate.type,
+            asset: result.selectedCandidate.assetSymbol ?? result.selectedCandidate.asset,
+            amount: result.selectedCandidate.tokenAmount ?? result.selectedCandidate.amount,
+          })
+        : null;
+      if (result.selectedCandidate && selectedActionIdentity !== previousState.actionIdentity)
         await safeNotify({
           userId: target.protectedAccountId,
           type: "MEI_SELECTED",
           title: "Minimum intervention selected",
           message: `${result.selectedCandidate.type} ${result.selectedCandidate.tokenAmount ?? result.selectedCandidate.amount} ${result.selectedCandidate.assetSymbol ?? result.selectedCandidate.asset}.`,
-          dedupeKey: `${target.protectedAccountId}:${target.chainId}:mei:${result.selectedCandidate.id}`,
-          metadata: { decisionId: persisted.decisionId },
+          dedupeKey: `${target.protectedAccountId}:${target.chainId}:mei:${persisted.decisionId ?? run.id}:${selectedActionIdentity}`,
+          metadata: { decisionId: persisted.decisionId, actionIdentity: selectedActionIdentity },
         });
     }
     if (result.riskLevel !== "SAFE" && target.executionMode !== "MONITOR_ONLY") {
@@ -239,21 +318,33 @@ export async function runProtectedAccountCycle(
           chainId: target.chainId,
           candidateId: selected.candidate.id,
         });
-        await safeNotify({
-          userId: target.protectedAccountId,
-          type: "APPROVAL_REQUIRED",
-          title: "Your approval is required",
-          message: "A protection action passed simulation and is waiting for your approval.",
-          dedupeKey: `${target.protectedAccountId}:${target.chainId}:approval:${selected.candidate.id}`,
-          metadata: { candidateId: selected.candidate.id },
+        const approvalActionIdentity = actionNotificationIdentity({
+          type: selected.candidate.type,
+          asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+          amount: selected.candidate.tokenAmount ?? selected.candidate.amount,
         });
+        if (
+          !previousState.approvalPending ||
+          previousState.actionIdentity !== approvalActionIdentity
+        )
+          await safeNotify({
+            userId: target.protectedAccountId,
+            type: "APPROVAL_REQUIRED",
+            title: "Your approval is required",
+            message: "A protection action passed simulation and is waiting for your approval.",
+            dedupeKey: `${target.protectedAccountId}:${target.chainId}:approval:${persisted.decisionId ?? run.id}:${approvalActionIdentity}`,
+            metadata: {
+              candidateId: selected.candidate.id,
+              actionIdentity: approvalActionIdentity,
+            },
+          });
       } else if (disposition === "EXECUTE" && selected.candidate) {
         await safeNotify({
           userId: target.protectedAccountId,
           type: "EXECUTION_STARTED",
           title: "Autonomous protection started",
           message: "All preflight readiness checks passed.",
-          dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${selected.candidate.id}:started`,
+          dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${run.id}:${selected.candidate.id}:started`,
         });
         try {
           execution = await dependencies.execute({
@@ -279,7 +370,7 @@ export async function runProtectedAccountCycle(
             type: "EXECUTION_FAILED",
             title: "Protection execution failed",
             message: blockerReason,
-            dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${selected.candidate.id}:failed:${blockerReason}`,
+            dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${run.id}:${selected.candidate.id}:failed:${blockerReason}`,
           });
         }
       }
@@ -307,14 +398,15 @@ export async function runProtectedAccountCycle(
           ) as Prisma.InputJsonValue,
         },
       });
-      await safeNotify({
-        userId: target.protectedAccountId,
-        type: "PROTECTION_BLOCKED",
-        title: "Protection blocked",
-        message: blockerReason,
-        dedupeKey: `${target.protectedAccountId}:${target.chainId}:blocked:${blockerReason}`,
-        metadata: { decisionId: persisted.decisionId, readiness },
-      });
+      if (shouldNotifyBlocker(previousState, blockerReason))
+        await safeNotify({
+          userId: target.protectedAccountId,
+          type: "PROTECTION_BLOCKED",
+          title: "Protection blocked",
+          message: blockerReason,
+          dedupeKey: `${target.protectedAccountId}:${target.chainId}:blocked:${blockerReason}:${run.id}`,
+          metadata: { decisionId: persisted.decisionId, readiness },
+        });
     } else if (persisted.decisionId && readiness) {
       await db.protectionDecision.update({
         where: { id: persisted.decisionId },

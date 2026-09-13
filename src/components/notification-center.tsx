@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StatusPill } from "./ui";
 import { LoadingButton } from "./loading-button";
 type Notice = {
@@ -29,41 +29,66 @@ export function NotificationCenter() {
   const [error, setError] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  async function load() {
-    const response = await fetch("/api/notifications");
-    if (!response.ok) {
+  const [refreshing, setRefreshing] = useState(false);
+  const requestInFlight = useRef(false);
+  const mounted = useRef(false);
+  const load = useCallback(async (initial = false) => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
+    try {
+      const response = await fetch("/api/notifications", { cache: "no-store" });
+      if (!response.ok) throw response.status;
+      const body = (await response.json()) as { notifications: Notice[] };
+      if (!mounted.current) return;
+      setError("");
+      setNotices(body.notifications);
+    } catch (status) {
+      if (!mounted.current) return;
       setError(
-        response.status === 401
+        status === 401
           ? "Your session expired."
-          : "Notifications are temporarily unavailable.",
+          : initial
+            ? "Notifications are temporarily unavailable."
+            : "Could not refresh notifications. We’ll retry automatically.",
       );
-      return;
+    } finally {
+      requestInFlight.current = false;
+      if (initial && mounted.current) setLoading(false);
     }
-    const body = (await response.json()) as { notifications: Notice[] };
-    setError("");
-    setNotices(body.notifications);
-  }
-  useEffect(() => {
-    let active = true;
-    fetch("/api/notifications")
-      .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-      .then((body: { notifications: Notice[] }) => {
-        if (active) setNotices(body.notifications);
-      })
-      .catch((status: unknown) => {
-        if (active) {
-          setError(
-            status === 401 ? "Your session expired." : "Notifications are temporarily unavailable.",
-          );
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
   }, []);
+  useEffect(() => {
+    mounted.current = true;
+    const initialRequest = window.setTimeout(() => void load(true), 0);
+    let interval: number | null = null;
+    const stopPolling = () => {
+      if (interval !== null) window.clearInterval(interval);
+      interval = null;
+    };
+    const startPolling = () => {
+      if (interval === null) interval = window.setInterval(() => void load(), 12_000);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void load();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+    if (document.visibilityState === "visible") startPolling();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      mounted.current = false;
+      window.clearTimeout(initialRequest);
+      stopPolling();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [load]);
+  async function refresh() {
+    setRefreshing(true);
+    await load();
+    if (mounted.current) setRefreshing(false);
+  }
   async function mark(notificationId?: string) {
     if (pendingId) return;
     setPendingId(notificationId ?? "all");
@@ -89,27 +114,40 @@ export function NotificationCenter() {
           <span className="label">Notification center</span>
           <h2>Meaningful protection events</h2>
         </div>
-        {notices.some((item) => !item.readAt) && (
+        <div className="button-row">
           <LoadingButton
             className="button secondary"
-            pending={pendingId === "all"}
-            pendingLabel="Updating…"
-            disabled={Boolean(pendingId)}
-            onClick={() => void mark()}
+            pending={refreshing}
+            pendingLabel="Refreshing…"
+            disabled={refreshing || loading}
+            onClick={() => void refresh()}
           >
-            Mark all read
+            Refresh
           </LoadingButton>
-        )}
+          {notices.some((item) => !item.readAt) && (
+            <LoadingButton
+              className="button secondary"
+              pending={pendingId === "all"}
+              pendingLabel="Updating…"
+              disabled={Boolean(pendingId)}
+              onClick={() => void mark()}
+            >
+              Mark all read
+            </LoadingButton>
+          )}
+        </div>
       </div>
       {error && (
-        <div className="session-expired">
+        <div className={error === "Your session expired." ? "session-expired" : undefined}>
           <p className="form-status error">{error}</p>
-          <Link className="button primary" href="/onboarding">
-            Reconnect Wallet
-          </Link>
+          {error === "Your session expired." && (
+            <Link className="button primary" href="/onboarding">
+              Reconnect Wallet
+            </Link>
+          )}
         </div>
       )}
-      {error ? null : loading ? (
+      {loading ? (
         <div className="notification-loading" role="status" aria-busy="true">
           <span className="button-spinner" aria-hidden="true" />
           Loading notifications…
@@ -155,7 +193,7 @@ export function NotificationCenter() {
             </article>
           ))}
         </div>
-      ) : (
+      ) : error ? null : (
         <p className="empty-row">
           <b>No protection events yet.</b> Risk changes, approvals, executions, and blocked actions
           will appear here.
