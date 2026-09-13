@@ -1012,6 +1012,13 @@ td small {
   color: #8294a7;
   font-size: 9px;
 }
+.success-card .execution-timestamp {
+  display: block;
+  margin-top: 9px;
+  color: #aebdcb;
+  font-size: 9px;
+  font-weight: 650;
+}
 .candidate-rank {
   width: 21px;
   height: 21px;
@@ -1785,7 +1792,7 @@ table {
 }
 .candidate-evidence summary {
   min-height: 48px;
-  padding: 10px 8px;
+  padding: 11px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1794,14 +1801,73 @@ table {
   cursor: pointer;
   font-size: 10px;
   font-weight: 700;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+  list-style: none;
+}
+.candidate-evidence summary::-webkit-details-marker {
+  display: none;
+}
+.candidate-evidence summary::marker {
+  content: "";
+}
+.candidate-evidence summary:hover {
+  color: #dbe7f1;
+  background: rgba(99, 167, 255, 0.06);
+  border-color: rgba(99, 167, 255, 0.18);
+}
+.candidate-evidence summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  background: rgba(99, 167, 255, 0.08);
+}
+.candidate-disclosure-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.candidate-disclosure-copy .disclosure-label {
+  color: inherit;
+  font-size: inherit;
+  overflow-wrap: anywhere;
+}
+.disclosure-label-expanded {
+  display: none !important;
 }
 .candidate-evidence summary small {
   color: #718399;
   font-size: 8px;
   font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.disclosure-chevron {
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid #7eafff;
+  border-bottom: 2px solid #7eafff;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 180ms ease;
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+.candidate-evidence[open] .disclosure-label-collapsed {
+  display: none;
+}
+.candidate-evidence[open] .disclosure-label-expanded {
+  display: block !important;
+}
+.candidate-evidence[open] .disclosure-chevron {
+  transform: rotate(225deg) translate(-2px, -2px);
 }
 .candidate-evidence[open] summary {
   border-bottom: 1px solid var(--line);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 .timeline-groups {
   display: flex;
@@ -2062,9 +2128,10 @@ table {
     grid-row: auto;
   }
   .candidate-evidence summary {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 3px;
+    align-items: center;
+    flex-direction: row;
+    gap: 12px;
+    padding: 12px 10px;
   }
   .success-card {
     grid-template-columns: 45px 1fr;

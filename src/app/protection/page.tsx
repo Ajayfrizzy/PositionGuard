@@ -226,12 +226,21 @@ export default async function ProtectionPage() {
               </div>
               {remaining.length > 0 && (
                 <details className="candidate-evidence">
-                  <summary>
-                    <span>
-                      Review {remaining.length} remaining candidate
-                      {remaining.length === 1 ? "" : "s"}
+                  <summary className="candidate-disclosure-summary">
+                    <span className="candidate-disclosure-copy">
+                      <span className="disclosure-label disclosure-label-collapsed">
+                        Review {remaining.length} remaining candidate
+                        {remaining.length === 1 ? "" : "s"}
+                      </span>
+                      <span className="disclosure-label disclosure-label-expanded">
+                        Hide remaining candidates
+                      </span>
+                      <small>
+                        {remaining.length} additional candidate
+                        {remaining.length === 1 ? "" : "s"} · Full policy and projection evidence
+                      </small>
                     </span>
-                    <small>Full policy and projection evidence</small>
+                    <span className="disclosure-chevron" aria-hidden="true" />
                   </summary>
                   <div className="candidate-list">
                     {remaining.map((candidate) => (
@@ -288,7 +297,7 @@ export default async function ProtectionPage() {
               </small>
             </div>
             <div>
-              <span>Decision status</span>
+              <span>Decision state at selection</span>
               <b>{historicalDecision.status.replaceAll("_", " ")}</b>
               <small>Decision created: {formatTimestamp(historicalDecision.createdAt)}</small>
             </div>
@@ -300,9 +309,21 @@ export default async function ProtectionPage() {
           </div>
           {historicalDecision.candidates.length > 0 && (
             <details className="candidate-evidence historical-candidates">
-              <summary>
-                <span>View previous candidate analysis</span>
-                <small>These are not current execution recommendations.</small>
+              <summary className="candidate-disclosure-summary">
+                <span className="candidate-disclosure-copy">
+                  <span className="disclosure-label disclosure-label-collapsed">
+                    View previous candidate analysis
+                  </span>
+                  <span className="disclosure-label disclosure-label-expanded">
+                    Hide previous candidate analysis
+                  </span>
+                  <small>
+                    {historicalDecision.candidates.length} historical candidate
+                    {historicalDecision.candidates.length === 1 ? "" : "s"} · Not current execution
+                    recommendations
+                  </small>
+                </span>
+                <span className="disclosure-chevron" aria-hidden="true" />
               </summary>
               <div className="historical-candidate-heading">
                 <span className="label">Previous candidate evaluation</span>
@@ -404,8 +425,8 @@ export default async function ProtectionPage() {
               </b>
             </p>
             <p>This execution belongs to a previous protection event.</p>
-            <small>
-              Execution completed:{" "}
+            <small className="execution-timestamp">
+              Executed{" "}
               {formatTimestamp(historicalExecution.completedAt ?? historicalExecution.createdAt)}
             </small>
           </div>

@@ -111,6 +111,20 @@ describe("product data presentation", () => {
       state: "valid",
       label: "Valid but not selected",
     }));
+  it("explains materially oversized candidates using persisted capital values", () => {
+    const mapped = mapCandidates(
+      [
+        candidate({ estimatedUsdValue: "1" }),
+        candidate({ id: "oversized", rank: 2, estimatedUsdValue: "10" }),
+      ],
+      candidate().id,
+    );
+    expect(mapped[1]).toMatchObject({
+      state: "valid",
+      reason:
+        "Reaches the target but uses significantly more capital than the selected Minimum Effective Intervention.",
+    });
+  });
   it("uses explicit approval wording", () =>
     expect(
       mapCandidates([candidate({ id: "approval", requiresApproval: true })], null)[0],

@@ -204,6 +204,7 @@ export function mapCandidates(
   candidates: CandidateAction[],
   selectedId: string | null,
 ): CandidateView[] {
+  const selectedCandidate = candidates.find((candidate) => candidate.id === selectedId);
   return candidates.map((candidate) => {
     const selected = candidate.id === selectedId;
     const state = selected
@@ -220,13 +221,23 @@ export function mapCandidates(
         : state === "approval"
           ? "Requires approval"
           : "Valid but not selected";
+    const selectedCapital = Number(selectedCandidate?.estimatedUsdValue);
+    const candidateCapital = Number(candidate.estimatedUsdValue);
+    const usesSignificantlyMoreCapital =
+      !selected &&
+      Number.isFinite(selectedCapital) &&
+      selectedCapital > 0 &&
+      Number.isFinite(candidateCapital) &&
+      candidateCapital >= selectedCapital * 1.5;
     const reason = selected
       ? "Minimum Effective Intervention."
       : candidate.rejectionReason
         ? (REASONS[candidate.rejectionReason] ?? candidate.rejectionReason)
         : candidate.requiresApproval
           ? "Valid, but requires explicit approval."
-          : "Reaches the target but uses more capital than the selected action.";
+          : usesSignificantlyMoreCapital
+            ? "Reaches the target but uses significantly more capital than the selected Minimum Effective Intervention."
+            : "Reaches the target but uses more capital than the selected action.";
     return { ...candidate, state, label, reason };
   });
 }

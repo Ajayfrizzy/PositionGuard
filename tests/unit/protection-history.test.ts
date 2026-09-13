@@ -87,6 +87,7 @@ describe("current and historical protection state", () => {
 
 describe("protection page presentation", () => {
   const page = source("src/app/protection/page.tsx");
+  const css = source("src/app/globals.css");
 
   it("shows an explicit no-action current decision and SAFE summary", () => {
     expect(page).toContain("POSITION SAFE");
@@ -99,7 +100,31 @@ describe("protection page presentation", () => {
     expect(page).toContain("PREVIOUS PROTECTION ANALYSIS");
     expect(page).toContain("Previous candidate evaluation");
     expect(page).toContain("View previous candidate analysis");
-    expect(page).toContain("These are not current execution recommendations.");
+    expect(page).toContain("Not current");
+    expect(page).toContain("historicalDecision.candidates.length");
+  });
+
+  it("uses visible closed/open disclosure labels and a decorative chevron", () => {
+    expect(page).toContain("disclosure-label-collapsed");
+    expect(page).toContain("Hide previous candidate analysis");
+    expect(page).toContain("Hide remaining candidates");
+    expect(page).toContain('className="disclosure-chevron" aria-hidden="true"');
+    expect(css).toContain(".disclosure-chevron");
+    expect(css).toMatch(/\.candidate-evidence\[open\] \.disclosure-chevron[^}]*rotate\(225deg\)/s);
+  });
+
+  it("makes the native summary row clearly interactive and keyboard visible", () => {
+    expect(css).toMatch(/\.candidate-evidence summary:hover/);
+    expect(css).toMatch(/\.candidate-evidence summary:focus-visible/);
+    expect(css).toMatch(/\.candidate-evidence summary[^}]*cursor:\s*pointer/s);
+    expect(page.match(/candidate-disclosure-summary/g)).toHaveLength(2);
+  });
+
+  it("uses historical state wording and persisted execution time", () => {
+    expect(page).toContain("Decision state at selection");
+    expect(page).not.toContain("Decision status");
+    expect(page).toContain('className="execution-timestamp"');
+    expect(page).toContain("formatTimestamp(historicalExecution.completedAt");
   });
 
   it("keeps historical execution proof without exposing a stale execution CTA", () => {
