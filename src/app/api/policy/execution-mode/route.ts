@@ -1,6 +1,7 @@
 import { requireRequestSession } from "@/lib/security/wallet-auth";
 import { getPrisma } from "@/lib/db/prisma";
 import { z } from "zod";
+import { revalidateTag } from "next/cache";
 export const runtime = "nodejs";
 const schema = z.strictObject({
   chainId: z.number().int().positive(),
@@ -33,6 +34,7 @@ export async function PATCH(request: Request) {
         metadata: { policyId: policy.id, chainId: input.chainId },
       },
     });
+    revalidateTag("product-data", { expire: 0 });
     return Response.json({ ok: true, executionMode: policy.executionMode });
   } catch (error) {
     return Response.json(

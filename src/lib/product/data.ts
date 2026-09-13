@@ -1,5 +1,5 @@
 import "server-only";
-import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { formatUnits, parseUnits } from "viem";
 import { getChain, getDefaultChain } from "../chains/config";
 import { getProtectionAsset } from "../chains/assets";
@@ -193,7 +193,7 @@ async function loadProductDataUncached(
     const needsDecision = view === "full" || view === "dashboard" || view === "protection";
     const needsActivity = view === "full" || view === "activity";
     const needsLatestExecution = needsActivity || view === "dashboard" || view === "protection";
-    const user = await db.user.findFirst({
+    const userPromise = db.user.findFirst({
       where:
         accountScope === null
           ? { id: "__unauthenticated__" }
@@ -227,16 +227,32 @@ async function loadProductDataUncached(
         },
       },
     });
-    const executions = await db.execution.findMany({
-      where: user
-        ? { decision: { userId: user.id } }
-        : accountScope === null
-          ? { id: "__unauthenticated__" }
-          : undefined,
-      include: { decision: { include: { snapshot: true } } },
-      orderBy: { createdAt: "desc" },
-      take: needsActivity ? 25 : needsLatestExecution ? 1 : 0,
-    });
+    const executionTake = needsActivity ? 25 : needsLatestExecution ? 1 : 0;
+    const scopedExecutionsPromise =
+      accountScope && executionTake
+        ? db.execution.findMany({
+            where: { decision: { userId: accountScope } },
+            include: { decision: { include: { snapshot: true } } },
+            orderBy: { createdAt: "desc" },
+            take: executionTake,
+          })
+        : null;
+    const user = await userPromise;
+    const executions =
+      scopedExecutionsPromise !== null
+        ? await scopedExecutionsPromise
+        : executionTake
+          ? await db.execution.findMany({
+              where: user
+                ? { decision: { userId: user.id } }
+                : accountScope === null
+                  ? { id: "__unauthenticated__" }
+                  : undefined,
+              include: { decision: { include: { snapshot: true } } },
+              orderBy: { createdAt: "desc" },
+              take: executionTake,
+            })
+          : [];
     const policyRow = user?.policies[0];
     const policy: ProductPolicy = policyRow
       ? {
@@ -410,7 +426,25 @@ async function loadProductDataUncached(
   }
 }
 
-export const loadProductData = cache(loadProductDataUncached);
+// Monitoring snapshots change on a minute-scale cadence. Sharing one short-lived,
+// account-scoped result across product tabs avoids repeating the same remote joins
+// during navigation while keeping the UI close to the latest completed cycle.
+const loadSharedProductData = unstable_cache(
+  (accountScope: string, chainScope: number) =>
+    loadProductDataUncached(accountScope, chainScope, "full"),
+  ["positionguard-product-data-v1"],
+  { revalidate: 15, tags: ["product-data"] },
+);
+
+export function loadProductData(
+  accountScope?: string | null,
+  chainScope?: number,
+  view: ProductDataView = "full",
+) {
+  return accountScope && chainScope
+    ? loadSharedProductData(accountScope, chainScope)
+    : loadProductDataUncached(accountScope, chainScope, view);
+}
 
 export type ProductDataView =
   "full" | "dashboard" | "position" | "protection" | "scenario" | "activity" | "settings";

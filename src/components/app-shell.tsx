@@ -143,7 +143,7 @@ export function AppShell({
         </Link>
         <nav className="side-nav" aria-label="Primary navigation">
           {nav.map(([href, label, icon]) => (
-            <Link {...navigationProps(href)} href={href} key={href}>
+            <Link {...navigationProps(href)} href={href} prefetch key={href}>
               <Icon name={icon} />
               <span>{label}</span>
               {visiblePendingPath === href && <span className="nav-spinner" />}
@@ -203,7 +203,7 @@ export function AppShell({
       <main className="app-main">{children}</main>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {nav.map(([href, label, icon]) => (
-          <Link {...navigationProps(href)} href={href} key={href}>
+          <Link {...navigationProps(href)} href={href} prefetch key={href}>
             <span className="mobile-nav-icon">
               <Icon name={icon} />
               {label === "Protection" && effectiveIndicator && (

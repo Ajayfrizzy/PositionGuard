@@ -243,7 +243,7 @@ export default async function DashboardPage() {
           </div>
         </Card>
       ) : (
-        <Card>
+        <Card className="dashboard-empty-action">
           <EmptyState title="No protection action required">
             {data.hasAavePosition
               ? "Your current position has no actionable Minimum Effective Intervention."

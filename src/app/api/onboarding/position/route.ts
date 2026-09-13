@@ -2,6 +2,7 @@ import { getAavePosition } from "@/lib/aave/service";
 import { analyzePosition, previewPolicy } from "@/lib/aave/analysis";
 import { persistPositionSnapshot } from "@/lib/aave/snapshots";
 import { requireRequestSession } from "@/lib/security/wallet-auth";
+import { revalidateTag } from "next/cache";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export async function POST(request: Request) {
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
     });
     const analysis = analyzePosition(position, previewPolicy);
     const snapshotId = await persistPositionSnapshot(position, analysis);
+    revalidateTag("product-data", { expire: 0 });
     return Response.json(
       {
         detected:

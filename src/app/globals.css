@@ -545,6 +545,11 @@ button {
   border-color: rgba(32, 230, 155, 0.26);
   background: linear-gradient(110deg, rgba(16, 56, 53, 0.5), rgba(10, 24, 37, 0.98) 57%);
 }
+.dashboard-empty-action {
+  margin-top: 14px;
+  border-color: rgba(128, 144, 166, 0.22);
+  background: linear-gradient(135deg, rgba(13, 27, 42, 0.96), rgba(8, 19, 31, 0.96));
+}
 .recommendation-accent {
   height: 100%;
   background: var(--green);

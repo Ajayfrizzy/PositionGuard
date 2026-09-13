@@ -3,6 +3,7 @@ import { policySchema } from "@/lib/policies/validator";
 import { getPrisma } from "@/lib/db/prisma";
 import { getChain } from "@/lib/chains/config";
 import { z } from "zod";
+import { revalidateTag } from "next/cache";
 export const runtime = "nodejs";
 const json = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
@@ -55,6 +56,7 @@ export async function PUT(request: Request) {
         metadata: { chainId: chain.chainId, enabled: policy.enabled },
       },
     });
+    revalidateTag("product-data", { expire: 0 });
     return json({ ok: true });
   } catch (error) {
     if (error instanceof z.ZodError || error instanceof SyntaxError)

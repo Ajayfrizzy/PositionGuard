@@ -36,6 +36,23 @@ describe("navigation hardening", () => {
     expect(shell).toContain('pending ? "pending"');
     expect(shell).toContain("nav-spinner");
     expect(shell).not.toContain("prefetch={false}");
+    expect(shell).toContain("prefetch key={href}");
+  });
+
+  it("shares short-lived account data across tabs and parallelizes independent reads", () => {
+    const data = source("src/lib/product/data.ts");
+    expect(data).toContain("unstable_cache");
+    expect(data).toContain("positionguard-product-data-v1");
+    expect(data).toContain("revalidate: 15");
+    expect(data).toContain("const userPromise");
+    expect(data).toContain("scopedExecutionsPromise");
+  });
+
+  it("visually separates the safe empty action from the overview grid", () => {
+    expect(source("src/app/dashboard/page.tsx")).toContain('className="dashboard-empty-action"');
+    expect(source("src/app/globals.css")).toMatch(
+      /\.dashboard-empty-action\s*\{[^}]*margin-top:\s*14px/s,
+    );
   });
 });
 
