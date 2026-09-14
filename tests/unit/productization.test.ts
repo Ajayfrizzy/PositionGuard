@@ -5,6 +5,8 @@ import {
   generateNonce,
   isValidWalletSignature,
   normalizeWalletAddress,
+  requestOrigin,
+  sameOrigin,
   sessionCookie,
 } from "../../src/lib/security/wallet-auth";
 import { mapFundingReadiness, mapWorkerHealth } from "../../src/lib/product/status";
@@ -49,6 +51,45 @@ describe("wallet session integration", () => {
 });
 
 describe("wallet onboarding security", () => {
+  it("accepts a same-origin browser request behind the HTTPS reverse proxy", () => {
+    const request = new Request("http://127.0.0.1:3000/api/auth/challenge", {
+      method: "POST",
+      headers: {
+        host: "positionguard.online",
+        origin: "https://positionguard.online",
+        "sec-fetch-site": "same-origin",
+        "x-forwarded-proto": "https",
+      },
+    });
+
+    expect(requestOrigin(request)).toBe("https://positionguard.online");
+    expect(sameOrigin(request)).toBe(true);
+  });
+  it("still rejects cross-site browser requests behind the reverse proxy", () => {
+    const request = new Request("http://127.0.0.1:3000/api/auth/challenge", {
+      method: "POST",
+      headers: {
+        host: "positionguard.online",
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+        "x-forwarded-proto": "https",
+      },
+    });
+
+    expect(sameOrigin(request)).toBe(false);
+  });
+  it("compares the browser origin with the forwarded public origin when fetch metadata is absent", () => {
+    const request = new Request("http://127.0.0.1:3000/api/auth/challenge", {
+      method: "POST",
+      headers: {
+        host: "positionguard.online",
+        origin: "https://positionguard.online",
+        "x-forwarded-proto": "https",
+      },
+    });
+
+    expect(sameOrigin(request)).toBe(true);
+  });
   it("generates unique high-entropy nonces", () => {
     const values = new Set(Array.from({ length: 20 }, generateNonce));
     expect(values.size).toBe(20);

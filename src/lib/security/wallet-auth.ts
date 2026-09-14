@@ -60,12 +60,28 @@ export function cookieValue(request: Request, name: string) {
     .find((item) => item.startsWith(`${name}=`));
   return pair ? decodeURIComponent(pair.slice(name.length + 1)) : null;
 }
+export function requestOrigin(request: Request) {
+  const url = new URL(request.url);
+  const host = request.headers.get("host")?.trim() || url.host;
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol =
+    forwardedProtocol === "http" || forwardedProtocol === "https"
+      ? forwardedProtocol
+      : url.protocol.slice(0, -1);
+
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return url.origin;
+  }
+}
 export function sameOrigin(request: Request) {
-  if (request.headers.get("sec-fetch-site") === "cross-site") return false;
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site") return false;
   const origin = request.headers.get("origin");
   if (!origin) return true;
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    return new URL(origin).origin === requestOrigin(request);
   } catch {
     return false;
   }

@@ -6,6 +6,7 @@ import {
   generateNonce,
   hashSecret,
   normalizeWalletAddress,
+  requestOrigin,
   sameOrigin,
 } from "@/lib/security/wallet-auth";
 import { z } from "zod";
@@ -31,10 +32,11 @@ export async function POST(request: Request) {
     const nonce = generateNonce();
     const issuedAt = new Date();
     const expiresAt = new Date(issuedAt.getTime() + CHALLENGE_TTL_MS);
-    const url = new URL(request.url);
+    const origin = requestOrigin(request);
+    const url = new URL(origin);
     const message = buildWalletChallenge({
       domain: url.host,
-      uri: url.origin,
+      uri: origin,
       walletAddress,
       chainId: input.chainId,
       nonce,
