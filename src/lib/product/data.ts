@@ -14,7 +14,7 @@ import {
   type ProductPosition,
 } from "./models";
 import { transactionExplorerUrl } from "./format";
-import { mapWorkerHealth } from "./status";
+import { mapMonitoringPresentation, mapWorkerHealth } from "./status";
 
 const EMPTY_POLICY: ProductPolicy = {
   executionMode: "REQUIRE_APPROVAL",
@@ -426,11 +426,15 @@ async function loadProductDataUncached(
         Number(process.env.MONITOR_POLL_INTERVAL_MS ?? 60_000) || 60_000,
       ),
     });
+    const monitoringPresentation = mapMonitoringPresentation({
+      policyEnabled: policy.enabled,
+      workerStatus: worker.status,
+    });
     return {
       ...base,
       protectedAccountId: user?.id ?? null,
       monitoring: {
-        active: policy.enabled && ["ONLINE", "DEGRADED"].includes(worker.status),
+        active: monitoringPresentation.active,
         lastCheck,
         status: worker.status,
       },

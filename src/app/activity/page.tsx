@@ -171,6 +171,7 @@ function AuditEventRow({ event }: { event: TimelineEvent }) {
         <div>
           <h3>{event.title}</h3>
           <StatusPill tone={event.tone}>{event.type}</StatusPill>
+          {event.recovered && <StatusPill tone="good">RECOVERED</StatusPill>}
         </div>
         <p>{event.detail}</p>
         {event.execution && (

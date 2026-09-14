@@ -1,5 +1,5 @@
 import { requireRequestSession } from "@/lib/security/wallet-auth";
-import { mapWorkerHealth } from "@/lib/product/status";
+import { mapMonitoringPresentation, mapWorkerHealth } from "@/lib/product/status";
 import { getPrisma } from "@/lib/db/prisma";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
@@ -26,13 +26,20 @@ export async function GET(request: Request) {
   const lastRun = policy?.user.monitoringRuns[0] ?? null;
   const worker = mapWorkerHealth({
     enabled: policy?.enabled ?? false,
-    lastCheck: lastRun?.completedAt ?? lastRun?.startedAt ?? null,
+    lastCheck: lastRun?.completedAt ?? null,
     lastRunStatus: lastRun?.status ?? null,
     pollingIntervalMs,
   });
+  const policyEnabled = policy?.enabled ?? false;
+  const presentation = mapMonitoringPresentation({
+    policyEnabled,
+    workerStatus: worker.status,
+  });
   return Response.json(
     {
-      protectionMonitoring: policy?.enabled ? "ACTIVE" : "INACTIVE",
+      policyEnabled,
+      protectionMonitoring: presentation.dashboardLabel,
+      monitoringActive: presentation.active,
       lastCheck: worker.lastCheck,
       workerStatus: worker.status,
     },

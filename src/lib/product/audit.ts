@@ -6,6 +6,7 @@ export interface TimelineEvent {
   detail: string;
   timestamp: string;
   tone: "good" | "warn" | "danger" | "neutral";
+  recovered?: boolean;
   execution?: ExecutionView;
 }
 export type ActivityFilter = "important" | "all" | "monitoring" | "executions" | "warnings";
@@ -36,19 +37,37 @@ export function mapAuditTimeline(
   events: AuditView[],
   executions: ExecutionView[],
 ): TimelineEvent[] {
-  const audit = events.map((event) => ({
-    id: event.id,
-    type: event.type,
-    title: humanize(event.type),
-    detail: event.message,
-    timestamp: event.createdAt,
-    tone:
-      event.severity === "ERROR"
-        ? ("danger" as const)
-        : event.severity === "WARNING"
-          ? ("warn" as const)
-          : ("neutral" as const),
-  }));
+  const successfulMonitoringTypes = new Set([
+    "POSITION_MONITORED",
+    "RISK_THRESHOLD_CROSSED",
+    "CANDIDATES_EVALUATED",
+    "MEI_SELECTED",
+  ]);
+  const audit = events.map((event) => {
+    const recovered =
+      event.type === "MONITORING_FAILED" &&
+      events.some(
+        (candidate) =>
+          successfulMonitoringTypes.has(candidate.type) &&
+          Date.parse(candidate.createdAt) > Date.parse(event.createdAt),
+      );
+    return {
+      id: event.id,
+      type: event.type,
+      title: humanize(event.type),
+      detail: recovered
+        ? `${event.message} Recovered on a subsequent monitoring cycle.`
+        : event.message,
+      timestamp: event.createdAt,
+      tone:
+        event.severity === "ERROR"
+          ? ("danger" as const)
+          : event.severity === "WARNING"
+            ? ("warn" as const)
+            : ("neutral" as const),
+      recovered,
+    };
+  });
   const executionEvents = executions.map((execution) => ({
     id: `execution:${execution.id}`,
     type: `EXECUTION_${execution.status}`,

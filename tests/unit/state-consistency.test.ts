@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { protectionRecommendation } from "../../src/lib/product/models";
 import {
   fundingCta,
+  mapMonitoringPresentation,
   mapProtectionIndicator,
   mapSidebarStatus,
   mapWorkerHealth,
@@ -67,10 +68,44 @@ describe("monitoring and navigation truthfulness", () => {
   it("does not call disabled or offline protection active", () => {
     expect(
       mapSidebarStatus({ authenticated: true, enabled: false, workerStatus: "ONLINE" }),
-    ).toMatchObject({ heading: "Protection disabled", detail: "Monitoring not enabled" });
+    ).toMatchObject({ heading: "Protection disabled", detail: "Monitoring inactive" });
     expect(
       mapSidebarStatus({ authenticated: true, enabled: true, workerStatus: "OFFLINE" }),
     ).toMatchObject({ heading: "Monitoring unavailable", detail: "Worker offline" });
+  });
+
+  it.each(["NOT_STARTED", "OFFLINE"] as const)(
+    "never presents %s worker state as online",
+    (workerStatus) => {
+      const status = mapSidebarStatus({ authenticated: true, enabled: true, workerStatus });
+      expect(status.detail).not.toBe("Monitoring is online");
+      expect(status.heading).not.toBe("Protection active");
+    },
+  );
+
+  it("derives dashboard and sidebar from the same canonical monitoring state", () => {
+    const status = mapMonitoringPresentation({ policyEnabled: true, workerStatus: "NOT_STARTED" });
+    expect(status).toMatchObject({
+      active: false,
+      dashboardLabel: "INACTIVE",
+      sidebar: { heading: "Protection enabled", detail: "Monitoring not started" },
+    });
+  });
+
+  it("presents an online worker as active monitoring everywhere", () => {
+    const status = mapMonitoringPresentation({ policyEnabled: true, workerStatus: "ONLINE" });
+    expect(status).toMatchObject({
+      active: true,
+      dashboardLabel: "ACTIVE",
+      sidebar: { heading: "Protection active", detail: "Monitoring is online" },
+    });
+  });
+
+  it("refreshes shell worker state through the lightweight endpoint", () => {
+    const shell = source("src/components/app-shell.tsx");
+    expect(shell).toContain('fetch("/api/monitor/status"');
+    expect(shell).toContain("15_000");
+    expect(source("src/app/api/monitor/status/route.ts")).toContain("mapMonitoringPresentation");
   });
 
   it("maps accessible protection indicators without using green for attention", () => {
@@ -144,5 +179,11 @@ describe("empty and isolated product states", () => {
     expect(policy).toContain("No transactions are submitted.");
     expect(policy).toContain("wait for my approval");
     expect(policy).toContain("Act automatically within the limits I set.");
+  });
+
+  it('labels an already-enabled policy "Protection enabled"', () => {
+    expect(source("src/components/policy-form.tsx")).toContain(
+      'initial.enabled && policy.enabled ? "Protection enabled" : "Enable protection"',
+    );
   });
 });

@@ -82,6 +82,41 @@ export function AppShell({
     return () => controller.abort();
   }, [session.authenticated]);
 
+  useEffect(() => {
+    if (!session.authenticated) return;
+    let stopped = false;
+    let controller: AbortController | null = null;
+    const refreshMonitoring = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const response = await fetch("/api/monitor/status", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("MONITOR_STATUS_UNAVAILABLE");
+        const data = (await response.json()) as {
+          policyEnabled: boolean;
+          workerStatus: WorkerStatus;
+        };
+        if (!stopped) {
+          setPolicyEnabled(data.policyEnabled);
+          setWorkerStatus(data.workerStatus);
+          setShellUnavailable(false);
+        }
+      } catch (error) {
+        if (!stopped && !(error instanceof DOMException && error.name === "AbortError"))
+          setShellUnavailable(true);
+      }
+    };
+    const interval = window.setInterval(() => void refreshMonitoring(), 15_000);
+    return () => {
+      stopped = true;
+      controller?.abort();
+      window.clearInterval(interval);
+    };
+  }, [session.authenticated]);
+
   function navigationProps(href: string) {
     const active = path === href || (path === "/" && href === "/dashboard");
     const pending = visiblePendingPath === href && !active;

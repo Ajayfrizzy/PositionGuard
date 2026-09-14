@@ -159,7 +159,11 @@ export function NotificationCenter() {
               <span className="notification-dot" />
               <div>
                 <div>
-                  <b>{labels[notice.type] ?? notice.title}</b>
+                  <b>
+                    {notice.type === "MEI_SELECTED" && notice.title.includes("updated")
+                      ? "Protection recommendation updated"
+                      : (labels[notice.type] ?? notice.title)}
+                  </b>
                   <StatusPill
                     tone={
                       notice.type.includes("FAILED") || notice.type.includes("BLOCKED")

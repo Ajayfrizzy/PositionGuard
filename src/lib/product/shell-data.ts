@@ -5,6 +5,7 @@ import { shouldShowProtectionAttention } from "./models";
 import type { RiskLevel } from "../protection/types";
 import {
   mapProtectionIndicator,
+  mapMonitoringPresentation,
   mapWorkerHealth,
   type ProtectionIndicator,
   type WorkerStatus,
@@ -90,10 +91,14 @@ async function loadShellDataUncached(
       ),
     });
     const policyEnabled = policy?.enabled ?? false;
+    const monitoring = mapMonitoringPresentation({
+      policyEnabled,
+      workerStatus: worker.status,
+    });
     return {
       protectionAttention,
       policyEnabled,
-      monitoringActive: policyEnabled && ["ONLINE", "DEGRADED"].includes(worker.status),
+      monitoringActive: monitoring.active,
       workerStatus: worker.status,
       protectionIndicator: mapProtectionIndicator({
         enabled: policyEnabled,

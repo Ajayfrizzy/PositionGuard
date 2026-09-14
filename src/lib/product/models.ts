@@ -1,5 +1,6 @@
 import type { CandidateAction, RiskLevel } from "../protection/types";
 import type { FundingReadinessState } from "../funding/readiness";
+import type { WorkerStatus } from "./status";
 
 export type ConnectionState = "connected" | "disconnected" | "unknown";
 export interface ProductPolicy {
@@ -112,7 +113,7 @@ export interface ProductData {
   rpc: ConnectionState;
   aave: ConnectionState;
   error: string | null;
-  monitoring: { active: boolean; lastCheck: string | null; status: string | null };
+  monitoring: { active: boolean; lastCheck: string | null; status: WorkerStatus | null };
   fundingReadiness: string | null;
   fundingAssessment: {
     state: FundingReadinessState;

@@ -2,11 +2,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   actionNotificationIdentity,
+  classifyActionNotificationChange,
   shouldNotifyBlocker,
   shouldNotifyRecovery,
   shouldNotifyRisk,
 } from "../../src/lib/notifications/transitions";
 import { notify, type NotificationStore } from "../../src/lib/notifications/service";
+import { filterAuditTimeline, mapAuditTimeline } from "../../src/lib/product/audit";
 
 const source = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 const state = (riskLevel: string | null, blockerReason: string | null = null) => ({
@@ -21,6 +23,7 @@ describe("notification transition semantics", () => {
     expect(shouldNotifyRisk(state("SAFE"), "WATCH")).toBe(true);
     expect(shouldNotifyRisk(state("WATCH"), "HIGH")).toBe(true);
     expect(shouldNotifyRisk(state("WATCH"), "WATCH")).toBe(false);
+    expect(shouldNotifyRisk(state("HIGH"), "WATCH")).toBe(false);
   });
 
   it("allows WATCH again after recovery and emits recovery only for non-SAFE → SAFE", () => {
@@ -57,6 +60,43 @@ describe("notification transition semantics", () => {
       amount: "0.1",
     });
     expect(changed).not.toBe(original);
+  });
+
+  it("suppresses near-identical accrued MEI amounts", () => {
+    const previous = { type: "REPAY_DEBT", asset: "USDC", amount: "0.038241" };
+    expect(classifyActionNotificationChange(previous, { ...previous, amount: "0.038215" })).toBe(
+      "UNCHANGED",
+    );
+    expect(classifyActionNotificationChange(previous, { ...previous, amount: "0.038315" })).toBe(
+      "UNCHANGED",
+    );
+  });
+
+  it("reports material amount and action-type changes as updates", () => {
+    const previous = { type: "REPAY_DEBT", asset: "USDC", amount: "100" };
+    expect(classifyActionNotificationChange(previous, { ...previous, amount: "102" })).toBe(
+      "UPDATED",
+    );
+    expect(
+      classifyActionNotificationChange(previous, {
+        type: "ADD_COLLATERAL",
+        asset: "USDC",
+        amount: "100",
+      }),
+    ).toBe("UPDATED");
+    expect(source("src/lib/monitoring/service.ts")).toContain(
+      '"Protection recommendation updated"',
+    );
+  });
+
+  it("treats a returning recommendation as a new selection", () => {
+    expect(
+      classifyActionNotificationChange(null, {
+        type: "REPAY_DEBT",
+        asset: "USDC",
+        amount: "10",
+      }),
+    ).toBe("SELECTED");
   });
 });
 
@@ -119,6 +159,39 @@ describe("notification refresh contract", () => {
     expect(monitoring).toContain(":execution:${run.id}:${selected.candidate.id}:started");
     expect(monitoring).toContain(
       ":execution:${run.id}:${selected.candidate.id}:failed:${blockerReason}",
+    );
+  });
+});
+
+describe("monitoring recovery context", () => {
+  it("preserves a monitoring failure and marks it recovered after a later success", () => {
+    const timeline = mapAuditTimeline(
+      [
+        {
+          id: "success",
+          type: "POSITION_MONITORED",
+          severity: "INFO",
+          message: "Position monitored.",
+          createdAt: "2026-09-14T04:00:00.000Z",
+          metadata: {},
+        },
+        {
+          id: "failure",
+          type: "MONITORING_FAILED",
+          severity: "ERROR",
+          message: "Monitoring cycle failed safely.",
+          createdAt: "2026-09-14T03:00:00.000Z",
+          metadata: {},
+        },
+      ],
+      [],
+    );
+    expect(timeline.find((event) => event.id === "failure")).toMatchObject({
+      recovered: true,
+      detail: expect.stringContaining("Recovered on a subsequent monitoring cycle"),
+    });
+    expect(filterAuditTimeline(timeline, "important").map((event) => event.id)).toContain(
+      "failure",
     );
   });
 });

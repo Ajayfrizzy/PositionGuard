@@ -62,6 +62,12 @@ export function mapFundingReadiness(
 }
 
 export type WorkerStatus = "ONLINE" | "DEGRADED" | "OFFLINE" | "NOT_STARTED";
+export type MonitoringPresentation = {
+  state: WorkerStatus;
+  active: boolean;
+  dashboardLabel: "ACTIVE" | "INACTIVE" | "DEGRADED" | "UNAVAILABLE";
+  sidebar: { heading: string; detail: string; tone: "good" | "warn" | "neutral" };
+};
 export function mapWorkerHealth(input: {
   enabled: boolean;
   lastCheck: Date | string | null;
@@ -111,19 +117,71 @@ export function mapSidebarStatus(input: {
 }): { heading: string; detail: string; tone: "good" | "warn" | "neutral" } {
   if (!input.authenticated)
     return { heading: "Connect wallet", detail: "Protection not configured", tone: "neutral" };
-  if (!input.enabled)
-    return { heading: "Protection disabled", detail: "Monitoring not enabled", tone: "neutral" };
+  return mapMonitoringPresentation({
+    policyEnabled: input.enabled,
+    workerStatus: input.workerStatus,
+  }).sidebar;
+}
+
+/** The single user-facing interpretation of policy and worker state. */
+export function mapMonitoringPresentation(input: {
+  policyEnabled: boolean;
+  workerStatus: WorkerStatus;
+}): MonitoringPresentation {
+  if (!input.policyEnabled)
+    return {
+      state: input.workerStatus,
+      active: false,
+      dashboardLabel: "INACTIVE",
+      sidebar: {
+        heading: "Protection disabled",
+        detail: "Monitoring inactive",
+        tone: "neutral",
+      },
+    };
   if (input.workerStatus === "ONLINE")
-    return { heading: "Protection active", detail: "Monitoring is online", tone: "good" };
+    return {
+      state: "ONLINE",
+      active: true,
+      dashboardLabel: "ACTIVE",
+      sidebar: {
+        heading: "Protection active",
+        detail: "Monitoring is online",
+        tone: "good",
+      },
+    };
   if (input.workerStatus === "DEGRADED")
-    return { heading: "Monitoring degraded", detail: "Worker needs attention", tone: "warn" };
+    return {
+      state: "DEGRADED",
+      active: true,
+      dashboardLabel: "DEGRADED",
+      sidebar: {
+        heading: "Monitoring degraded",
+        detail: "Worker needs attention",
+        tone: "warn",
+      },
+    };
   if (input.workerStatus === "NOT_STARTED")
     return {
-      heading: "Monitoring not started",
-      detail: "No monitoring cycle has run",
-      tone: "neutral",
+      state: "NOT_STARTED",
+      active: false,
+      dashboardLabel: "INACTIVE",
+      sidebar: {
+        heading: "Protection enabled",
+        detail: "Monitoring not started",
+        tone: "neutral",
+      },
     };
-  return { heading: "Monitoring unavailable", detail: "Worker offline", tone: "warn" };
+  return {
+    state: "OFFLINE",
+    active: false,
+    dashboardLabel: "UNAVAILABLE",
+    sidebar: {
+      heading: "Monitoring unavailable",
+      detail: "Worker offline",
+      tone: "warn",
+    },
+  };
 }
 
 export function fundingCta(status: FundingUxStatus): string | null {

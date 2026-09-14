@@ -12,6 +12,7 @@ import { executeAutonomousProtection, executeProtection } from "../execution/orc
 import { notify } from "../notifications/service";
 import {
   actionNotificationIdentity,
+  classifyActionNotificationChange,
   shouldNotifyBlocker,
   shouldNotifyRecovery,
   shouldNotifyRisk,
@@ -202,10 +203,37 @@ async function previousNotificationState(
     },
     orderBy: { startedAt: "desc" },
   });
+  const safeBoundary = await db.monitoringRun.findFirst({
+    where: {
+      userId,
+      chainId,
+      id: { not: currentRunId },
+      completedAt: { not: null },
+      snapshotId: { not: null },
+      decisionId: null,
+    },
+    orderBy: { startedAt: "desc" },
+    select: { id: true },
+  });
+  const riskEpisodeId = safeBoundary ? `after:${safeBoundary.id}` : "initial";
   if (!previousRun)
-    return { riskLevel: null, blockerReason: null, actionIdentity: null, approvalPending: false };
+    return {
+      riskLevel: null,
+      blockerReason: null,
+      actionIdentity: null,
+      action: null,
+      riskEpisodeId,
+      approvalPending: false,
+    };
   if (!previousRun.decisionId)
-    return { riskLevel: "SAFE", blockerReason: null, actionIdentity: null, approvalPending: false };
+    return {
+      riskLevel: "SAFE",
+      blockerReason: null,
+      actionIdentity: null,
+      action: null,
+      riskEpisodeId: `after:${previousRun.id}`,
+      approvalPending: false,
+    };
   const decision = await db.protectionDecision.findUnique({
     where: { id: previousRun.decisionId },
     select: {
@@ -215,22 +243,38 @@ async function previousNotificationState(
       selectedAction: true,
       selectedAsset: true,
       selectedAmount: true,
+      policyContext: true,
     },
   });
   if (!decision)
-    return { riskLevel: null, blockerReason: null, actionIdentity: null, approvalPending: false };
-  const actionIdentity =
+    return {
+      riskLevel: null,
+      blockerReason: null,
+      actionIdentity: null,
+      action: null,
+      riskEpisodeId,
+      approvalPending: false,
+    };
+  const policyContext =
+    decision.policyContext && typeof decision.policyContext === "object"
+      ? (decision.policyContext as Record<string, unknown>)
+      : {};
+  const action =
     decision.selectedAction && decision.selectedAsset && decision.selectedAmount
-      ? actionNotificationIdentity({
+      ? {
           type: decision.selectedAction,
           asset: decision.selectedAsset,
           amount: decision.selectedAmount.toString(),
-        })
+          policyState: `${String(policyContext.enabled ?? true)}:${String(policyContext.executionMode ?? "")}`,
+        }
       : null;
+  const actionIdentity = action ? actionNotificationIdentity(action) : null;
   return {
     riskLevel: decision.riskLevel,
     blockerReason: decision.status === "PROTECTION_BLOCKED" ? decision.blockerReason : null,
     actionIdentity,
+    action,
+    riskEpisodeId,
     approvalPending: previousRun.status === "READY_TO_EXECUTE",
   };
 }
@@ -255,6 +299,7 @@ export async function runProtectedAccountCycle(
     });
     const persisted = await dependencies.persist(prepared, target.walletAddress);
     const result = prepared.analysis.result;
+    const riskEpisodeId = previousState.riskEpisodeId ?? "initial";
     let readiness: FundingReadiness | null = null,
       execution: ProtectionExecutionResult | null = null,
       blockerReason: string | null = null;
@@ -264,8 +309,8 @@ export async function runProtectedAccountCycle(
         type: "POSITION_CHANGED",
         title: "Position returned to safe range",
         message: "Your health factor is back within the configured safety range.",
-        dedupeKey: `${target.protectedAccountId}:${target.chainId}:recovery:${run.id}`,
-        metadata: { snapshotId: persisted.snapshotId },
+        dedupeKey: `${target.protectedAccountId}:${target.chainId}:recovery:${previousState.riskEpisodeId ?? run.id}`,
+        metadata: { snapshotId: persisted.snapshotId, riskEpisodeId: previousState.riskEpisodeId },
       });
     }
     if (result.riskLevel !== "SAFE") {
@@ -273,26 +318,42 @@ export async function runProtectedAccountCycle(
         await safeNotify({
           userId: target.protectedAccountId,
           type: `RISK_${result.riskLevel}` as "RISK_WATCH" | "RISK_HIGH" | "RISK_CRITICAL",
-          title: `${result.riskLevel} position risk`,
+          title:
+            previousState.riskLevel && previousState.riskLevel !== "SAFE"
+              ? `Risk escalated to ${result.riskLevel}`
+              : `Risk increased to ${result.riskLevel}`,
           message: `Health factor ${prepared.position.account.healthFactor ?? "unbounded"} requires attention.`,
-          dedupeKey: `${target.protectedAccountId}:${target.chainId}:risk:${result.riskLevel}:${run.id}`,
-          metadata: { decisionId: persisted.decisionId },
+          dedupeKey: `${target.protectedAccountId}:${target.chainId}:risk:${riskEpisodeId}:${previousState.riskLevel ?? "NONE"}:${result.riskLevel}:${run.id}`,
+          metadata: { decisionId: persisted.decisionId, riskEpisodeId },
         });
-      const selectedActionIdentity = result.selectedCandidate
-        ? actionNotificationIdentity({
+      const selectedAction = result.selectedCandidate
+        ? {
             type: result.selectedCandidate.type,
             asset: result.selectedCandidate.assetSymbol ?? result.selectedCandidate.asset,
             amount: result.selectedCandidate.tokenAmount ?? result.selectedCandidate.amount,
-          })
+            policyState: `true:${target.executionMode}`,
+          }
         : null;
-      if (result.selectedCandidate && selectedActionIdentity !== previousState.actionIdentity)
+      const selectedActionIdentity = selectedAction
+        ? actionNotificationIdentity(selectedAction)
+        : null;
+      const actionChange = classifyActionNotificationChange(previousState.action, selectedAction);
+      if (result.selectedCandidate && selectedActionIdentity && actionChange !== "UNCHANGED")
         await safeNotify({
           userId: target.protectedAccountId,
           type: "MEI_SELECTED",
-          title: "Minimum intervention selected",
+          title:
+            actionChange === "SELECTED"
+              ? "Protection action selected"
+              : "Protection recommendation updated",
           message: `${result.selectedCandidate.type} ${result.selectedCandidate.tokenAmount ?? result.selectedCandidate.amount} ${result.selectedCandidate.assetSymbol ?? result.selectedCandidate.asset}.`,
-          dedupeKey: `${target.protectedAccountId}:${target.chainId}:mei:${persisted.decisionId ?? run.id}:${selectedActionIdentity}`,
-          metadata: { decisionId: persisted.decisionId, actionIdentity: selectedActionIdentity },
+          dedupeKey: `${target.protectedAccountId}:${target.chainId}:mei:${riskEpisodeId}:${run.id}:${selectedActionIdentity}`,
+          metadata: {
+            decisionId: persisted.decisionId,
+            actionIdentity: selectedActionIdentity,
+            riskEpisodeId,
+            change: actionChange,
+          },
         });
     }
     if (result.riskLevel !== "SAFE" && target.executionMode !== "MONITOR_ONLY") {
@@ -323,10 +384,13 @@ export async function runProtectedAccountCycle(
           asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
           amount: selected.candidate.tokenAmount ?? selected.candidate.amount,
         });
-        if (
-          !previousState.approvalPending ||
-          previousState.actionIdentity !== approvalActionIdentity
-        )
+        const approvalActionChange = classifyActionNotificationChange(previousState.action, {
+          type: selected.candidate.type,
+          asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+          amount: selected.candidate.tokenAmount ?? selected.candidate.amount,
+          policyState: `true:${target.executionMode}`,
+        });
+        if (!previousState.approvalPending || approvalActionChange !== "UNCHANGED")
           await safeNotify({
             userId: target.protectedAccountId,
             type: "APPROVAL_REQUIRED",

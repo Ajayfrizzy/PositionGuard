@@ -13,7 +13,7 @@ import { loadDashboardData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber, shortAddress, timeAgo } from "@/lib/product/format";
 import { deterministicExplanation } from "@/lib/agent/explanation";
 import { protectionRecommendation } from "@/lib/product/models";
-import { mapFundingReadiness } from "@/lib/product/status";
+import { mapFundingReadiness, mapMonitoringPresentation } from "@/lib/product/status";
 
 export const dynamic = "force-dynamic";
 const riskTone = (risk: string) =>
@@ -42,6 +42,10 @@ export default async function DashboardPage() {
     candidates: data.candidates,
     selected: candidate,
     protectionEnabled: data.policy.enabled,
+  });
+  const monitoring = mapMonitoringPresentation({
+    policyEnabled: data.policy.enabled,
+    workerStatus: data.monitoring.status ?? "NOT_STARTED",
   });
   return (
     <div className="page">
@@ -157,7 +161,7 @@ export default async function DashboardPage() {
               <h2>{data.policy.enabled ? "Protection enabled" : "Protection disabled"}</h2>
             </div>
             <StatusPill
-              tone={data.policy.enabled ? (data.monitoring.active ? "good" : "warn") : "neutral"}
+              tone={data.policy.enabled ? (monitoring.active ? "good" : "warn") : "neutral"}
             >
               {data.policy.enabled ? "ENABLED" : "DISABLED"}
             </StatusPill>
@@ -175,11 +179,11 @@ export default async function DashboardPage() {
             </div>
             <div>
               <span>Protection monitoring</span>
-              <b>{data.monitoring.active ? "ACTIVE" : "INACTIVE"}</b>
+              <b>{monitoring.dashboardLabel}</b>
             </div>
             <div>
               <span>Worker status</span>
-              <b>{(data.monitoring.status ?? "NOT_STARTED").replaceAll("_", " ")}</b>
+              <b>{monitoring.state.replaceAll("_", " ")}</b>
             </div>
             <div>
               <span>Last check</span>

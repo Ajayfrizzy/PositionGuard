@@ -265,7 +265,7 @@ export function PolicyForm({
         <Toggle
           checked={policy.enabled}
           setChecked={(value) => set("enabled", value)}
-          title="Enable protection"
+          title={initial.enabled && policy.enabled ? "Protection enabled" : "Enable protection"}
           copy={
             policy.enabled
               ? initial.enabled
