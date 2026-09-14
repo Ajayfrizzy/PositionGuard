@@ -59,6 +59,7 @@ export interface ExecutionView {
   transactionLink: string | null;
   keeperHubExecutionId: string | null;
   receiptVerified: boolean;
+  aaveEffectVerified: boolean;
   healthFactorBefore: string | null;
   healthFactorAfter: string | null;
   failureReason: string | null;

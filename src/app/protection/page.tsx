@@ -441,7 +441,7 @@ export default async function ProtectionPage() {
               Receipt <b>{historicalExecution.receiptVerified ? "Verified" : "Pending"}</b>
             </span>
             <span>
-              Aave event <b>{historicalExecution.receiptVerified ? "Verified" : "Pending"}</b>
+              Aave event <b>{historicalExecution.aaveEffectVerified ? "Verified" : "Pending"}</b>
             </span>
             {historicalExecution.transactionLink && (
               <a href={historicalExecution.transactionLink} target="_blank" rel="noreferrer">

@@ -42,7 +42,7 @@ describe("navigation hardening", () => {
   it("shares short-lived account data across tabs and parallelizes independent reads", () => {
     const data = source("src/lib/product/data.ts");
     expect(data).toContain("unstable_cache");
-    expect(data).toContain("positionguard-product-data-v1");
+    expect(data).toContain("positionguard-product-data-v2");
     expect(data).toContain("revalidate: 15");
     expect(data).toContain("const userPromise");
     expect(data).toContain("scopedExecutionsPromise");

@@ -16,6 +16,7 @@ import {
 import { transactionExplorerUrl } from "./format";
 import { mapMonitoringPresentation, mapWorkerHealth } from "./status";
 import { readWorkerHeartbeat } from "../monitoring/heartbeat";
+import { loadLatestVerifiedProtection } from "./latest-verified-protection";
 
 const EMPTY_POLICY: ProductPolicy = {
   executionMode: "REQUIRE_APPROVAL",
@@ -225,6 +226,7 @@ async function loadProductDataUncached(
           take: 1,
         },
         decisions: {
+          where: { snapshot: { chainId: network.chainId } },
           orderBy: { createdAt: "desc" },
           take: needsDecision ? 1 : 0,
           include: { snapshot: true, candidates: { orderBy: { rank: "asc" } } },
@@ -242,10 +244,20 @@ async function loadProductDataUncached(
       },
     });
     const executionTake = needsActivity ? 25 : needsLatestExecution ? 1 : 0;
+    const latestVerifiedExecutionPromise =
+      accountScope && needsLatestExecution
+        ? loadLatestVerifiedProtection(
+            (query) => db.execution.findFirst(query),
+            accountScope,
+            network.chainId,
+          )
+        : null;
     const scopedExecutionsPromise =
       accountScope && executionTake
         ? db.execution.findMany({
-            where: { decision: { userId: accountScope } },
+            where: {
+              decision: { userId: accountScope, snapshot: { chainId: network.chainId } },
+            },
             include: { decision: { include: { snapshot: true } } },
             orderBy: { createdAt: "desc" },
             take: executionTake,
@@ -258,7 +270,9 @@ async function loadProductDataUncached(
         : executionTake
           ? await db.execution.findMany({
               where: user
-                ? { decision: { userId: user.id } }
+                ? {
+                    decision: { userId: user.id, snapshot: { chainId: network.chainId } },
+                  }
                 : accountScope === null
                   ? { id: "__unauthenticated__" }
                   : undefined,
@@ -267,6 +281,16 @@ async function loadProductDataUncached(
               take: executionTake,
             })
           : [];
+    const latestVerifiedExecution =
+      latestVerifiedExecutionPromise !== null
+        ? await latestVerifiedExecutionPromise
+        : user && needsLatestExecution
+          ? await loadLatestVerifiedProtection(
+              (query) => db.execution.findFirst(query),
+              user.id,
+              network.chainId,
+            )
+          : null;
     const totalExecutionCount = user
       ? await db.execution.count({ where: { decision: { userId: user.id } } })
       : 0;
@@ -295,22 +319,27 @@ async function loadProductDataUncached(
       Boolean(position.capturedAt) &&
       (Number(position.totalCollateralUsd) > 0 || Number(position.totalDebtUsd) > 0);
     const decision = user?.decisions[0];
-    const rawCandidates: CandidateAction[] = (decision?.candidates ?? []).map((candidate) => ({
-      id: candidate.id,
-      type: candidate.type === "ADD_COLLATERAL" ? "ADD_COLLATERAL" : "REPAY_DEBT",
-      asset: candidate.asset,
-      assetSymbol: executionAssetSymbol(candidate.asset, network.chainId),
-      amount: candidate.amount.toString(),
-      tokenAmount: candidate.amount.toString(),
-      estimatedUsdValue: candidate.estimatedUsdValue.toString(),
-      expectedHealthFactor: candidate.expectedHealthFactor?.toString() ?? null,
-      reachesTarget: candidate.reachesTarget,
-      policyValidity: candidate.policyValidity,
-      valid: candidate.valid,
-      requiresApproval: candidate.requiresApproval,
-      rejectionReason: candidate.rejectionReason as CandidateAction["rejectionReason"],
-      rank: candidate.rank,
-    }));
+    const mapRawCandidates = (
+      decisionRow:
+        NonNullable<typeof decision> | NonNullable<typeof latestVerifiedExecution>["decision"],
+    ): CandidateAction[] =>
+      decisionRow.candidates.map((candidate) => ({
+        id: candidate.id,
+        type: candidate.type === "ADD_COLLATERAL" ? "ADD_COLLATERAL" : "REPAY_DEBT",
+        asset: candidate.asset,
+        assetSymbol: executionAssetSymbol(candidate.asset, network.chainId),
+        amount: candidate.amount.toString(),
+        tokenAmount: candidate.amount.toString(),
+        estimatedUsdValue: candidate.estimatedUsdValue.toString(),
+        expectedHealthFactor: candidate.expectedHealthFactor?.toString() ?? null,
+        reachesTarget: candidate.reachesTarget,
+        policyValidity: candidate.policyValidity,
+        valid: candidate.valid,
+        requiresApproval: candidate.requiresApproval,
+        rejectionReason: candidate.rejectionReason as CandidateAction["rejectionReason"],
+        rank: candidate.rank,
+      }));
+    const rawCandidates: CandidateAction[] = decision ? mapRawCandidates(decision) : [];
     const selectedRaw =
       rawCandidates.find(
         (candidate) =>
@@ -321,7 +350,9 @@ async function loadProductDataUncached(
       rawCandidates.find((candidate) => candidate.valid && !candidate.requiresApproval) ??
       null;
     const candidates = mapCandidates(rawCandidates, selectedRaw?.id ?? null);
-    const mappedExecutions = executions.map((execution) => ({
+    const mapExecution = (
+      execution: (typeof executions)[number] | NonNullable<typeof latestVerifiedExecution>,
+    ) => ({
       id: execution.id,
       decisionId: execution.decisionId,
       status: execution.executionStatus,
@@ -342,6 +373,7 @@ async function loadProductDataUncached(
           : null),
       keeperHubExecutionId: execution.keeperHubExecutionId,
       receiptVerified: execution.receiptVerified,
+      aaveEffectVerified: execution.receiptVerified,
       healthFactorBefore:
         execution.healthFactorBefore?.toString() ??
         execution.decision.snapshot.healthFactor?.toString() ??
@@ -350,7 +382,11 @@ async function loadProductDataUncached(
       failureReason: execution.failureReason,
       createdAt: execution.createdAt.toISOString(),
       completedAt: execution.completedAt?.toISOString() ?? null,
-    }));
+    });
+    const mappedExecutions = executions.map(mapExecution);
+    const mappedLatestExecution = latestVerifiedExecution
+      ? mapExecution(latestVerifiedExecution)
+      : null;
     let riskLevel: RiskLevel = decision?.riskLevel ?? "SAFE";
     if (position.capturedAt) riskLevel = liveRisk(position.healthFactor, policy);
     const auditEvents = (user?.auditEvents ?? []).map((event) => ({
@@ -397,20 +433,55 @@ async function loadProductDataUncached(
     const decisionIsCurrent = Boolean(
       decision && user?.snapshots[0] && decision.snapshotId === user.snapshots[0].id,
     );
-    const decisionView = decision
-      ? {
-          id: decision.id,
-          riskLevel: decision.riskLevel,
-          status: decision.status,
-          createdAt: decision.createdAt.toISOString(),
-          snapshotBlockNumber: decision.snapshot.blockNumber?.toString() ?? null,
-          snapshotHealthFactor: decision.snapshot.healthFactor?.toString() ?? null,
-          expectedHealthFactor: decision.expectedHealthFactor?.toString() ?? null,
-          candidates,
-          selectedCandidate,
-        }
-      : null;
+    const mapDecisionView = (
+      decisionRow:
+        NonNullable<typeof decision> | NonNullable<typeof latestVerifiedExecution>["decision"],
+      decisionCandidates: ReturnType<typeof mapCandidates>,
+    ) => {
+      const selected =
+        decisionCandidates.find(
+          (candidate) =>
+            candidate.type === decisionRow.selectedAction &&
+            candidate.amount === decisionRow.selectedAmount?.toString(),
+        ) ??
+        decisionCandidates.find((candidate) => candidate.valid && !candidate.requiresApproval) ??
+        null;
+      return {
+        id: decisionRow.id,
+        riskLevel: decisionRow.riskLevel,
+        status: decisionRow.status,
+        createdAt: decisionRow.createdAt.toISOString(),
+        snapshotBlockNumber: decisionRow.snapshot.blockNumber?.toString() ?? null,
+        snapshotHealthFactor: decisionRow.snapshot.healthFactor?.toString() ?? null,
+        expectedHealthFactor: decisionRow.expectedHealthFactor?.toString() ?? null,
+        candidates: decisionCandidates,
+        selectedCandidate: selected,
+      };
+    };
+    const decisionView = decision ? mapDecisionView(decision, candidates) : null;
     const decisionState = protectionDecisionState(decisionView, riskLevel, decisionIsCurrent);
+    const executionDecision = latestVerifiedExecution?.decision;
+    const executionDecisionRawCandidates = executionDecision
+      ? mapRawCandidates(executionDecision)
+      : [];
+    const executionSelectedRaw = executionDecision
+      ? (executionDecisionRawCandidates.find(
+          (candidate) =>
+            candidate.type === executionDecision.selectedAction &&
+            candidate.amount === executionDecision.selectedAmount?.toString(),
+        ) ??
+        executionDecisionRawCandidates.find(
+          (candidate) => candidate.valid && !candidate.requiresApproval,
+        ) ??
+        null)
+      : null;
+    const executionDecisionCandidates = mapCandidates(
+      executionDecisionRawCandidates,
+      executionSelectedRaw?.id ?? null,
+    );
+    const historicalExecutionDecision = executionDecision
+      ? mapDecisionView(executionDecision, executionDecisionCandidates)
+      : null;
     const protectionAttention = shouldShowProtectionAttention({
       policyEnabled: policy.enabled,
       riskLevel,
@@ -447,8 +518,12 @@ async function loadProductDataUncached(
       selectedCandidate,
       decisionIsCurrent,
       ...decisionState,
+      historicalDecision:
+        historicalExecutionDecision?.id !== decisionState.currentDecision?.id
+          ? historicalExecutionDecision
+          : decisionState.historicalDecision,
       protectionAttention,
-      latestExecution: mappedExecutions[0] ?? null,
+      latestExecution: mappedLatestExecution,
       executions: mappedExecutions,
       auditEvents,
       positionChangedAt:
@@ -502,7 +577,7 @@ async function loadProductDataUncached(
 const loadSharedProductData = unstable_cache(
   (accountScope: string, chainScope: number) =>
     loadProductDataUncached(accountScope, chainScope, "full"),
-  ["positionguard-product-data-v1"],
+  ["positionguard-product-data-v2"],
   { revalidate: 15, tags: ["product-data"] },
 );
 

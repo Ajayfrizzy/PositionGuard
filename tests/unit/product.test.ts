@@ -58,6 +58,7 @@ const execution = (patch: Partial<ExecutionView> = {}): ExecutionView => ({
   transactionLink: `https://sepolia.basescan.org/tx/0x${"a".repeat(64)}`,
   keeperHubExecutionId: "kh-execution",
   receiptVerified: true,
+  aaveEffectVerified: true,
   healthFactorBefore: "1.549918",
   healthFactorAfter: "1.599999",
   failureReason: null,

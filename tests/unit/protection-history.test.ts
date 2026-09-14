@@ -69,8 +69,8 @@ describe("current and historical protection state", () => {
 
   it("gives SAFE state a candidate-free current explanation", () => {
     const explanation = deterministicExplanation({
-      healthFactor: "1.6188",
-      target: "1.60",
+      healthFactor: "1.652",
+      target: "1.65",
       riskLevel: "SAFE",
       candidates: [selected],
       selected,
@@ -131,6 +131,7 @@ describe("protection page presentation", () => {
     expect(page).toContain("PREVIOUS PROTECTION SUCCESS");
     expect(page).toContain("This execution belongs to a previous protection event.");
     expect(page).toContain("historicalExecution.receiptVerified");
+    expect(page).toContain("historicalExecution.aaveEffectVerified");
     expect(page).toContain("historicalExecution.transactionLink");
     expect(page).toMatch(/actionable \? \(\s*<ExecutionPanel/);
   });
