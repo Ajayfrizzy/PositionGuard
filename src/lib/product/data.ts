@@ -15,6 +15,7 @@ import {
 } from "./models";
 import { transactionExplorerUrl } from "./format";
 import { mapMonitoringPresentation, mapWorkerHealth } from "./status";
+import { readWorkerHeartbeat } from "../monitoring/heartbeat";
 
 const EMPTY_POLICY: ProductPolicy = {
   executionMode: "REQUIRE_APPROVAL",
@@ -204,6 +205,7 @@ async function loadProductDataUncached(
       view === "full" || view === "dashboard" || view === "protection" || view === "settings";
     const needsActivity = view === "full" || view === "activity";
     const needsLatestExecution = needsActivity || view === "dashboard" || view === "protection";
+    const heartbeatPromise = readWorkerHeartbeat(network.chainId);
     const userPromise = db.user.findFirst({
       where:
         accountScope === null
@@ -249,7 +251,7 @@ async function loadProductDataUncached(
             take: executionTake,
           })
         : null;
-    const user = await userPromise;
+    const [user, heartbeat] = await Promise.all([userPromise, heartbeatPromise]);
     const executions =
       scopedExecutionsPromise !== null
         ? await scopedExecutionsPromise
@@ -418,13 +420,7 @@ async function loadProductDataUncached(
     });
     const lastCheck = user?.monitoringRuns[0]?.completedAt?.toISOString() ?? null;
     const worker = mapWorkerHealth({
-      enabled: policy.enabled,
-      lastCheck,
-      lastRunStatus: user?.monitoringRuns[0]?.status ?? null,
-      pollingIntervalMs: Math.max(
-        30_000,
-        Number(process.env.MONITOR_POLL_INTERVAL_MS ?? 60_000) || 60_000,
-      ),
+      lastHeartbeatAt: heartbeat?.lastHeartbeatAt ?? null,
     });
     const monitoringPresentation = mapMonitoringPresentation({
       policyEnabled: policy.enabled,

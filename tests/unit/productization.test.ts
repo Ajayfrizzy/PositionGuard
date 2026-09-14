@@ -26,8 +26,8 @@ describe("wallet session integration", () => {
 
   it("uses explicit session identity in the product shell", () => {
     const shell = source("src/components/app-shell.tsx");
-    expect(shell).toContain("session.authenticated");
-    expect(shell).toContain("session.walletAddress");
+    expect(shell).toContain("activeSession.authenticated");
+    expect(shell).toContain("activeSession.walletAddress");
     expect(shell).not.toContain("position.wallet");
   });
 
@@ -175,28 +175,19 @@ describe("product readiness presentation", () => {
     const now = new Date("2026-09-11T10:10:00Z");
     expect(
       mapWorkerHealth({
-        enabled: true,
-        lastCheck: "2026-09-11T10:09:30Z",
-        lastRunStatus: "MONITORED",
-        pollingIntervalMs: 60_000,
+        lastHeartbeatAt: "2026-09-11T10:09:30Z",
         now,
       }).status,
     ).toBe("ONLINE");
     expect(
       mapWorkerHealth({
-        enabled: true,
-        lastCheck: "2026-09-11T10:07:00Z",
-        lastRunStatus: "FAILED",
-        pollingIntervalMs: 60_000,
+        lastHeartbeatAt: "2026-09-11T10:09:15Z",
         now,
       }).status,
     ).toBe("DEGRADED");
     expect(
       mapWorkerHealth({
-        enabled: true,
-        lastCheck: null,
-        lastRunStatus: null,
-        pollingIntervalMs: 60_000,
+        lastHeartbeatAt: null,
         now,
       }).status,
     ).toBe("NOT_STARTED");

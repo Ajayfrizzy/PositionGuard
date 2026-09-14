@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon, ShieldMark } from "./icons";
 import { shortAddress } from "@/lib/product/format";
+import { LiveMonitoringProvider } from "./live-monitoring-context";
 import {
   mapSidebarStatus,
   type ProtectionIndicator,
@@ -38,10 +39,13 @@ export function AppShell({
 }) {
   const path = usePathname();
   const router = useRouter();
+  const [sessionOverride, setSessionOverride] = useState<AppSession | null>(null);
+  const activeSession = sessionOverride ?? session;
   const [disconnecting, setDisconnecting] = useState(false);
   const [protectionAttention, setProtectionAttention] = useState(initialProtectionAttention);
   const [policyEnabled, setPolicyEnabled] = useState(false);
   const [workerStatus, setWorkerStatus] = useState<WorkerStatus>("NOT_STARTED");
+  const [lastMonitoringCheck, setLastMonitoringCheck] = useState<string | null>(null);
   const [protectionIndicator, setProtectionIndicator] = useState<ProtectionIndicator>(null);
   const [shellLoaded, setShellLoaded] = useState(!session.authenticated);
   const [shellUnavailable, setShellUnavailable] = useState(false);
@@ -49,7 +53,41 @@ export function AppShell({
   const visiblePendingPath = pendingPath === path ? null : pendingPath;
 
   useEffect(() => {
-    if (!session.authenticated) return;
+    const adoptSession = (next: AppSession) => {
+      setSessionOverride(next);
+      setShellLoaded(!next.authenticated);
+      setShellUnavailable(false);
+    };
+    const onSessionAuthenticated = (event: Event) => {
+      const detail = (event as CustomEvent<AppSession>).detail;
+      if (detail?.authenticated && detail.walletAddress && detail.chainId) adoptSession(detail);
+    };
+    window.addEventListener("positionguard:session-authenticated", onSessionAuthenticated);
+
+    // Root layouts are preserved during client navigation. Reconcile a shell that
+    // was mounted before authentication with the authoritative cookie session.
+    if (!activeSession.authenticated && path !== "/onboarding") {
+      void fetch("/api/auth/session", { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok) return null;
+          return (await response.json()) as {
+            authenticated?: boolean;
+            session?: Omit<AppSession, "authenticated">;
+          };
+        })
+        .then((result) => {
+          if (result?.authenticated && result.session)
+            adoptSession({ authenticated: true, ...result.session });
+        })
+        .catch(() => undefined);
+    }
+
+    return () =>
+      window.removeEventListener("positionguard:session-authenticated", onSessionAuthenticated);
+  }, [activeSession.authenticated, path]);
+
+  useEffect(() => {
+    if (!activeSession.authenticated) return;
     const controller = new AbortController();
     fetch("/api/shell", { signal: controller.signal })
       .then((response) => {
@@ -70,10 +108,10 @@ export function AppShell({
       )
       .catch(() => undefined);
     return () => controller.abort();
-  }, [session.authenticated]);
+  }, [activeSession.authenticated, activeSession.chainId, activeSession.protectedAccountId]);
 
   useEffect(() => {
-    if (!session.authenticated) return;
+    if (!activeSession.authenticated) return;
     let stopped = false;
     let controller: AbortController | null = null;
     const refreshMonitoring = async () => {
@@ -84,14 +122,25 @@ export function AppShell({
           cache: "no-store",
           signal: controller.signal,
         });
+        if (response.status === 401) {
+          setSessionOverride({
+            authenticated: false,
+            walletAddress: null,
+            protectedAccountId: null,
+            chainId: null,
+          });
+          return;
+        }
         if (!response.ok) throw new Error("MONITOR_STATUS_UNAVAILABLE");
         const data = (await response.json()) as {
           policyEnabled: boolean;
           workerStatus: WorkerStatus;
+          lastCheck: string | null;
         };
         if (!stopped) {
           setPolicyEnabled(data.policyEnabled);
           setWorkerStatus(data.workerStatus);
+          setLastMonitoringCheck(data.lastCheck);
           setShellUnavailable(false);
           setShellLoaded(true);
         }
@@ -109,14 +158,29 @@ export function AppShell({
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") void refreshMonitoring();
     };
+    const onPolicySaved = (event: Event) => {
+      const detail = (event as CustomEvent<{ policyEnabled?: boolean }>).detail;
+      if (typeof detail?.policyEnabled === "boolean") {
+        setPolicyEnabled(detail.policyEnabled);
+        if (!detail.policyEnabled) {
+          setProtectionAttention(false);
+          setProtectionIndicator(null);
+        }
+      }
+      setShellUnavailable(false);
+      setShellLoaded(true);
+      void refreshMonitoring();
+    };
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("positionguard:policy-saved", onPolicySaved);
     return () => {
       stopped = true;
       controller?.abort();
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("positionguard:policy-saved", onPolicySaved);
     };
-  }, [session.authenticated]);
+  }, [activeSession.authenticated, activeSession.chainId, activeSession.protectedAccountId]);
 
   function navigationProps(href: string) {
     const active = path === href || (path === "/" && href === "/dashboard");
@@ -136,6 +200,14 @@ export function AppShell({
     try {
       await fetch("/api/auth/session", { method: "DELETE" });
     } finally {
+      setSessionOverride({
+        authenticated: false,
+        walletAddress: null,
+        protectedAccountId: null,
+        chainId: null,
+      });
+      setPolicyEnabled(false);
+      setWorkerStatus("NOT_STARTED");
       router.push("/onboarding");
       router.refresh();
       setDisconnecting(false);
@@ -149,19 +221,19 @@ export function AppShell({
         detail: "Monitoring state could not be loaded",
         tone: "warn",
       } as const)
-    : session.authenticated && !shellLoaded
+    : activeSession.authenticated && !shellLoaded
       ? ({
           heading: "Checking protection status",
           detail: "Loading Monitoring state",
           tone: "neutral",
         } as const)
       : mapSidebarStatus({
-          authenticated: session.authenticated,
+          authenticated: activeSession.authenticated,
           enabled: policyEnabled,
           workerStatus,
         });
-  const networkName = session.chainId === 8453 ? "Base" : "Base Sepolia";
-  const isTestnet = session.chainId !== 8453;
+  const networkName = activeSession.chainId === 8453 ? "Base" : "Base Sepolia";
+  const isTestnet = activeSession.chainId !== 8453;
   const effectiveIndicator =
     protectionIndicator ??
     (protectionAttention
@@ -203,7 +275,7 @@ export function AppShell({
             <span className="network-icon">◆</span>
             <span>
               <b>{networkName}</b>
-              <small>Chain ID {session.chainId ?? "—"}</small>
+              <small>Chain ID {activeSession.chainId ?? "—"}</small>
             </span>
             {isTestnet && <em>TESTNET</em>}
           </div>
@@ -213,14 +285,14 @@ export function AppShell({
             <Icon name="shield" />
           </div>
           <div>
-            <b>{session.authenticated ? "Protected Account" : "Wallet not connected"}</b>
-            <span title={session.walletAddress ?? undefined}>
-              {session.authenticated && session.walletAddress
-                ? shortAddress(session.walletAddress)
+            <b>{activeSession.authenticated ? "Protected Account" : "Wallet not connected"}</b>
+            <span title={activeSession.walletAddress ?? undefined}>
+              {activeSession.authenticated && activeSession.walletAddress
+                ? shortAddress(activeSession.walletAddress)
                 : "Connect wallet"}
             </span>
           </div>
-          {session.authenticated ? (
+          {activeSession.authenticated ? (
             <button
               type="button"
               disabled={disconnecting}
@@ -236,7 +308,17 @@ export function AppShell({
           )}
         </div>
       </aside>
-      <main className="app-main">{children}</main>
+      <LiveMonitoringProvider
+        value={{
+          loaded: shellLoaded,
+          unavailable: shellUnavailable,
+          policyEnabled,
+          workerStatus,
+          lastCheck: lastMonitoringCheck,
+        }}
+      >
+        <main className="app-main">{children}</main>
+      </LiveMonitoringProvider>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {nav.map(([href, label, icon]) => (
           <Link {...navigationProps(href)} href={href} prefetch key={href}>

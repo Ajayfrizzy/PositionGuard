@@ -58,12 +58,20 @@ describe("monitoring and navigation truthfulness", () => {
   it("distinguishes a worker that has never run from an outage", () =>
     expect(
       mapWorkerHealth({
-        enabled: true,
-        lastCheck: null,
-        lastRunStatus: null,
-        pollingIntervalMs: 60_000,
+        lastHeartbeatAt: null,
       }).status,
     ).toBe("NOT_STARTED"));
+
+  it("uses fixed heartbeat-age thresholds independent of policy and monitoring runs", () => {
+    const now = new Date("2026-09-14T12:00:00Z");
+    expect(mapWorkerHealth({ lastHeartbeatAt: "2026-09-14T11:59:30Z", now }).status).toBe("ONLINE");
+    expect(mapWorkerHealth({ lastHeartbeatAt: "2026-09-14T11:59:29Z", now }).status).toBe(
+      "DEGRADED",
+    );
+    expect(mapWorkerHealth({ lastHeartbeatAt: "2026-09-14T11:58:59Z", now }).status).toBe(
+      "OFFLINE",
+    );
+  });
 
   it("does not call disabled or offline protection active", () => {
     expect(
@@ -183,8 +191,36 @@ describe("empty and isolated product states", () => {
 
   it('labels an already-enabled policy "Protection enabled"', () => {
     expect(source("src/components/policy-form.tsx")).toContain(
-      'initial.enabled && policy.enabled ? "Protection enabled" : "Enable protection"',
+      'savedPolicy.enabled && policy.enabled ? "Protection enabled" : "Enable protection"',
     );
+  });
+
+  it("adopts the persisted policy, refreshes routes, and notifies the mounted shell", () => {
+    const form = source("src/components/policy-form.tsx");
+    const route = source("src/app/api/policy/route.ts");
+    expect(form).toContain("setPolicy(persistedPolicy)");
+    expect(form).toContain("dirty.current = false");
+    expect(form).toContain("router.refresh()");
+    expect(form).toContain('new CustomEvent("positionguard:policy-saved"');
+    expect(route).toContain("policy: {");
+    expect(route).toContain("savedPolicy.targetHealthFactor.toString()");
+    expect(route).toContain("revalidatePath(path)");
+  });
+
+  it("does not use monitoring runs as the worker liveness signal", () => {
+    const statusRoute = source("src/app/api/monitor/status/route.ts");
+    const productData = source("src/lib/product/data.ts");
+    expect(statusRoute).toContain("readWorkerHeartbeat(auth.session.chainId)");
+    expect(statusRoute).toContain("lastHeartbeatAt: heartbeat?.lastHeartbeatAt ?? null");
+    expect(productData).toContain("const heartbeatPromise = readWorkerHeartbeat(network.chainId)");
+    expect(productData).toContain("lastHeartbeatAt: heartbeat?.lastHeartbeatAt ?? null");
+  });
+
+  it("updates process heartbeat independently from monitoring cycles", () => {
+    const worker = source("scripts/monitor-worker.ts");
+    expect(worker).toContain("WORKER_HEARTBEAT_INTERVAL_MS");
+    expect(worker).toContain("setInterval(() => void touchHeartbeat()");
+    expect(worker).toContain("recordWorkerHeartbeat({ chainId, instanceId");
   });
 
   it("refreshes monitoring immediately before starting the 15-second poll", () => {
@@ -208,5 +244,27 @@ describe("empty and isolated product states", () => {
     expect(shell).toContain("setPolicyEnabled(data.policyEnabled)");
     expect(shell).toContain("setWorkerStatus(data.workerStatus)");
     expect(shell).toContain("setShellLoaded(true)");
+  });
+
+  it("reconciles the preserved app shell immediately after wallet authentication", () => {
+    const shell = source("src/components/app-shell.tsx");
+    const onboarding = source("src/components/wallet-onboarding.tsx");
+    expect(shell).toContain('window.addEventListener("positionguard:session-authenticated"');
+    expect(shell).toContain('fetch("/api/auth/session", { cache: "no-store" })');
+    expect(shell).toContain("if (!activeSession.authenticated) return");
+    expect(onboarding).toContain('new CustomEvent("positionguard:session-authenticated"');
+    expect(onboarding).toContain("router.refresh()");
+  });
+
+  it("drives the dashboard protection card from the same live status as the sidebar", () => {
+    const shell = source("src/components/app-shell.tsx");
+    const dashboard = source("src/app/dashboard/page.tsx");
+    const liveCard = source("src/components/live-protection-status.tsx");
+    expect(shell).toContain("<LiveMonitoringProvider");
+    expect(shell).toContain("setLastMonitoringCheck(data.lastCheck)");
+    expect(dashboard).toContain("<LiveProtectionStatus");
+    expect(liveCard).toContain("useLiveMonitoring()");
+    expect(liveCard).toContain("live?.loaded ? live.workerStatus : initialWorkerStatus");
+    expect(liveCard).toContain("mapMonitoringPresentation({ policyEnabled, workerStatus })");
   });
 });

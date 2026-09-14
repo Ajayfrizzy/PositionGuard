@@ -3,7 +3,7 @@ import { policySchema } from "@/lib/policies/validator";
 import { getPrisma } from "@/lib/db/prisma";
 import { getChain } from "@/lib/chains/config";
 import { z } from "zod";
-import { revalidateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 export const runtime = "nodejs";
 const json = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
@@ -42,22 +42,44 @@ export async function PUT(request: Request) {
         },
         404,
       );
-    await db.protectionPolicy.upsert({
-      where: { userId_chainId: { userId: user.id, chainId: chain.chainId } },
-      create: { userId: user.id, chainId: chain.chainId, ...policy },
-      update: policy,
-    });
-    await db.auditEvent.create({
-      data: {
-        userId: user.id,
-        type: "POLICY_UPDATED",
-        severity: "INFO",
-        message: "Protection policy updated and validated.",
-        metadata: { chainId: chain.chainId, enabled: policy.enabled },
-      },
+    const savedPolicy = await db.$transaction(async (transaction) => {
+      const persisted = await transaction.protectionPolicy.upsert({
+        where: { userId_chainId: { userId: user.id, chainId: chain.chainId } },
+        create: { userId: user.id, chainId: chain.chainId, ...policy },
+        update: policy,
+      });
+      await transaction.auditEvent.create({
+        data: {
+          userId: user.id,
+          type: "POLICY_UPDATED",
+          severity: "INFO",
+          message: "Protection policy updated and validated.",
+          metadata: { chainId: chain.chainId, enabled: persisted.enabled },
+        },
+      });
+      return persisted;
     });
     revalidateTag("product-data", { expire: 0 });
-    return json({ ok: true });
+    for (const path of ["/dashboard", "/settings", "/protection", "/position", "/scenario"])
+      revalidatePath(path);
+    return json({
+      ok: true,
+      policy: {
+        id: savedPolicy.id,
+        executionMode: savedPolicy.executionMode,
+        targetHealthFactor: savedPolicy.targetHealthFactor.toString(),
+        warningHealthFactor: savedPolicy.warningHealthFactor.toString(),
+        emergencyHealthFactor: savedPolicy.emergencyHealthFactor.toString(),
+        maxAutonomousAmountUsd: savedPolicy.maxAutonomousAmountUsd.toString(),
+        maxDailyAutonomousAmountUsd: savedPolicy.maxDailyAutonomousAmountUsd.toString(),
+        approvalRequiredAboveUsd: savedPolicy.approvalRequiredAboveUsd.toString(),
+        allowRepay: savedPolicy.allowRepay,
+        allowAddCollateral: savedPolicy.allowAddCollateral,
+        interventionCooldownMinutes: savedPolicy.interventionCooldownMinutes,
+        enabled: savedPolicy.enabled,
+        updatedAt: savedPolicy.updatedAt.toISOString(),
+      },
+    });
   } catch (error) {
     if (error instanceof z.ZodError || error instanceof SyntaxError)
       return json(

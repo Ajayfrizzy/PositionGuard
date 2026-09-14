@@ -9,11 +9,12 @@ import {
   StatusPill,
 } from "@/components/ui";
 import { Icon } from "@/components/icons";
+import { LiveProtectionStatus } from "@/components/live-protection-status";
 import { loadDashboardData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber, shortAddress, timeAgo } from "@/lib/product/format";
 import { deterministicExplanation } from "@/lib/agent/explanation";
 import { protectionRecommendation } from "@/lib/product/models";
-import { mapFundingReadiness, mapMonitoringPresentation } from "@/lib/product/status";
+import { mapFundingReadiness } from "@/lib/product/status";
 
 export const dynamic = "force-dynamic";
 const riskTone = (risk: string) =>
@@ -42,10 +43,6 @@ export default async function DashboardPage() {
     candidates: data.candidates,
     selected: candidate,
     protectionEnabled: data.policy.enabled,
-  });
-  const monitoring = mapMonitoringPresentation({
-    policyEnabled: data.policy.enabled,
-    workerStatus: data.monitoring.status ?? "NOT_STARTED",
   });
   return (
     <div className="page">
@@ -151,59 +148,12 @@ export default async function DashboardPage() {
             </>
           )}
         </Card>
-        <Card className="protection-card">
-          <div className="card-heading">
-            <div className="round-icon">
-              <Icon name="shield" />
-            </div>
-            <div>
-              <span className="label">Protection status</span>
-              <h2>{data.policy.enabled ? "Protection enabled" : "Protection disabled"}</h2>
-            </div>
-            <StatusPill
-              tone={data.policy.enabled ? (monitoring.active ? "good" : "warn") : "neutral"}
-            >
-              {data.policy.enabled ? "ENABLED" : "DISABLED"}
-            </StatusPill>
-          </div>
-          <div className="protection-list">
-            <div>
-              <span>Protection mode</span>
-              <b>
-                {data.policy.executionMode === "MONITOR_ONLY"
-                  ? "MONITOR ONLY"
-                  : data.policy.executionMode === "REQUIRE_APPROVAL"
-                    ? "ASK BEFORE ACTING"
-                    : "PROTECT AUTOMATICALLY"}
-              </b>
-            </div>
-            <div>
-              <span>Protection monitoring</span>
-              <b>{monitoring.dashboardLabel}</b>
-            </div>
-            <div>
-              <span>Worker status</span>
-              <b>{monitoring.state.replaceAll("_", " ")}</b>
-            </div>
-            <div>
-              <span>Last check</span>
-              <b>{data.monitoring.lastCheck ? timeAgo(data.monitoring.lastCheck) : "Never"}</b>
-            </div>
-            <div>
-              <span>Funding readiness</span>
-              <b>{funding.status.replaceAll("_", " ")}</b>
-            </div>
-            <div>
-              <span>Configured target</span>
-              <b>{formatNumber(data.policy.targetHealthFactor, 2)} HF</b>
-            </div>
-            <div>
-              <span>Automatic limit</span>
-              <b>{formatCompactUsd(data.policy.maxAutonomousAmountUsd)}</b>
-            </div>
-          </div>
-          <ArrowLink href="/settings">View protection policy</ArrowLink>
-        </Card>
+        <LiveProtectionStatus
+          policy={data.policy}
+          fundingStatus={funding.status}
+          initialWorkerStatus={data.monitoring.status ?? "NOT_STARTED"}
+          initialLastCheck={data.monitoring.lastCheck}
+        />
       </div>
       {candidate ? (
         <Card className="recommendation">

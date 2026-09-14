@@ -288,6 +288,19 @@ model MonitoringRun {
   @@index([userId, chainId, startedAt])
 }
 
+model WorkerHeartbeat {
+  id              String   @id @default(cuid())
+  chainId         Int
+  workerName      String   @db.VarChar(100)
+  lastHeartbeatAt DateTime
+  startedAt       DateTime
+  instanceId      String   @db.VarChar(100)
+  updatedAt       DateTime @updatedAt
+
+  @@unique([chainId, workerName])
+  @@index([lastHeartbeatAt])
+}
+
 enum SnapshotPurpose {
   OBSERVATION
   DECISION

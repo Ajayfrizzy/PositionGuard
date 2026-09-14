@@ -1,34 +1,30 @@
 import { requireRequestSession } from "@/lib/security/wallet-auth";
 import { mapMonitoringPresentation, mapWorkerHealth } from "@/lib/product/status";
 import { getPrisma } from "@/lib/db/prisma";
+import { readWorkerHeartbeat } from "@/lib/monitoring/heartbeat";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
   const auth = await requireRequestSession(request);
   if ("error" in auth) return auth.error;
-  const pollingIntervalMs = Math.max(
-    30_000,
-    Number(process.env.MONITOR_POLL_INTERVAL_MS ?? 60_000) || 60_000,
-  );
-  const policy = await getPrisma().protectionPolicy.findFirst({
-    where: { userId: auth.session.protectedAccountId, chainId: auth.session.chainId },
-    include: {
-      user: {
-        include: {
-          monitoringRuns: {
-            where: { chainId: auth.session.chainId },
-            orderBy: { startedAt: "desc" },
-            take: 1,
-          },
+  const [policy, heartbeat, lastRun] = await Promise.all([
+    getPrisma().protectionPolicy.findUnique({
+      where: {
+        userId_chainId: {
+          userId: auth.session.protectedAccountId,
+          chainId: auth.session.chainId,
         },
       },
-    },
-  });
-  const lastRun = policy?.user.monitoringRuns[0] ?? null;
+      select: { enabled: true },
+    }),
+    readWorkerHeartbeat(auth.session.chainId),
+    getPrisma().monitoringRun.findFirst({
+      where: { userId: auth.session.protectedAccountId, chainId: auth.session.chainId },
+      orderBy: { startedAt: "desc" },
+      select: { completedAt: true },
+    }),
+  ]);
   const worker = mapWorkerHealth({
-    enabled: policy?.enabled ?? false,
-    lastCheck: lastRun?.completedAt ?? null,
-    lastRunStatus: lastRun?.status ?? null,
-    pollingIntervalMs,
+    lastHeartbeatAt: heartbeat?.lastHeartbeatAt ?? null,
   });
   const policyEnabled = policy?.enabled ?? false;
   const presentation = mapMonitoringPresentation({
@@ -40,7 +36,8 @@ export async function GET(request: Request) {
       policyEnabled,
       protectionMonitoring: presentation.dashboardLabel,
       monitoringActive: presentation.active,
-      lastCheck: worker.lastCheck,
+      lastCheck: lastRun?.completedAt?.toISOString() ?? null,
+      lastHeartbeatAt: worker.lastHeartbeatAt,
       workerStatus: worker.status,
     },
     { headers: { "Cache-Control": "no-store" } },

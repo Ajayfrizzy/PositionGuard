@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ProductPolicy } from "@/lib/product/models";
 import { Icon } from "./icons";
 import { LoadingButton } from "./loading-button";
@@ -47,11 +47,20 @@ export function PolicyForm({
 }) {
   const router = useRouter();
   const [policy, setPolicy] = useState(initial);
+  const [savedPolicy, setSavedPolicy] = useState(initial);
   const [confirmed, setConfirmed] = useState(initial.executionMode === "AUTONOMOUS");
   const [status, setStatus] = useState("");
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const dirty = useRef(false);
+  useEffect(() => {
+    if (dirty.current) return;
+    setPolicy(initial);
+    setSavedPolicy(initial);
+    setConfirmed(initial.executionMode === "AUTONOMOUS");
+  }, [initial]);
   function set(key: keyof ProductPolicy, value: string | boolean | number) {
+    dirty.current = true;
     setPolicy((current) => ({ ...current, [key]: value }));
   }
   function setMode(value: ProductPolicy["executionMode"]) {
@@ -84,20 +93,34 @@ export function PolicyForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await response.json()) as { error?: { message?: string } };
+      const body = (await response.json()) as {
+        policy?: ProductPolicy;
+        error?: { message?: string };
+      };
       if (!response.ok) throw new Error(body.error?.message ?? "Policy update failed");
+      if (!body.policy) throw new Error("Policy update returned no saved policy");
+      const persistedPolicy = body.policy;
+      dirty.current = false;
+      setPolicy(persistedPolicy);
+      setSavedPolicy(persistedPolicy);
+      setConfirmed(persistedPolicy.executionMode === "AUTONOMOUS");
       setStatus(
         onboarding
-          ? policy.enabled
+          ? persistedPolicy.enabled
             ? "Protection enabled. Opening your dashboard."
             : "Protection settings saved. Enable Protection when you are ready to begin monitoring."
-          : policy.enabled
+          : persistedPolicy.enabled
             ? "Protection settings saved. Hosted monitoring remains enabled."
             : "Protection settings saved. Protection and monitoring are disabled.",
       );
-      if (onboarding && policy.enabled) {
+      window.dispatchEvent(
+        new CustomEvent("positionguard:policy-saved", {
+          detail: { policyEnabled: persistedPolicy.enabled },
+        }),
+      );
+      router.refresh();
+      if (onboarding && persistedPolicy.enabled) {
         router.push("/dashboard");
-        router.refresh();
       } else if (onboarding) {
         document.querySelector("#funding-readiness")?.scrollIntoView({ behavior: "smooth" });
       }
@@ -148,7 +171,10 @@ export function PolicyForm({
             <input
               type="checkbox"
               checked={confirmed}
-              onChange={(event) => setConfirmed(event.target.checked)}
+              onChange={(event) => {
+                dirty.current = true;
+                setConfirmed(event.target.checked);
+              }}
             />
             <span>I understand PositionGuard may act automatically within the limits below.</span>
           </label>
@@ -257,7 +283,7 @@ export function PolicyForm({
         </span>
         <h2>
           {policy.enabled
-            ? initial.enabled
+            ? savedPolicy.enabled
               ? "Protection is enabled"
               : "Protection will be enabled"
             : "Protection is disabled"}
@@ -265,10 +291,10 @@ export function PolicyForm({
         <Toggle
           checked={policy.enabled}
           setChecked={(value) => set("enabled", value)}
-          title={initial.enabled && policy.enabled ? "Protection enabled" : "Enable protection"}
+          title={savedPolicy.enabled && policy.enabled ? "Protection enabled" : "Enable protection"}
           copy={
             policy.enabled
-              ? initial.enabled
+              ? savedPolicy.enabled
                 ? "Hosted monitoring is active for this position."
                 : "Hosted monitoring will begin after you save."
               : "Monitoring and Protection Actions will remain off."
@@ -312,10 +338,10 @@ export function PolicyForm({
           disabled={busy || (policy.executionMode === "AUTONOMOUS" && !confirmed)}
         >
           {policy.enabled
-            ? initial.enabled
+            ? savedPolicy.enabled
               ? "Save Protection Settings"
               : "Enable Protection"
-            : initial.enabled
+            : savedPolicy.enabled
               ? "Disable Protection"
               : "Save Protection Settings"}
         </LoadingButton>

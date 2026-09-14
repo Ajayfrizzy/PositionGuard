@@ -192,12 +192,27 @@ export function WalletOnboarding() {
         }),
       });
       const verified = (await verifyResponse.json()) as {
+        walletAddress?: string;
+        chainId?: number;
+        protectedAccountId?: string;
         error?: { code?: string; message?: string };
       };
       if (!verifyResponse.ok)
         throw new Error(
           verified.error?.message ?? "PositionGuard could not verify wallet ownership.",
         );
+      if (!verified.walletAddress || !verified.chainId || !verified.protectedAccountId)
+        throw new Error("PositionGuard returned an incomplete wallet session.");
+      window.dispatchEvent(
+        new CustomEvent("positionguard:session-authenticated", {
+          detail: {
+            authenticated: true,
+            walletAddress: verified.walletAddress,
+            chainId: verified.chainId,
+            protectedAccountId: verified.protectedAccountId,
+          },
+        }),
+      );
       setStage(2);
       setPendingLabel("Reading Aave position…");
       setStatus("Ownership verified. Reading your Aave V3 position…");
@@ -280,6 +295,7 @@ export function WalletOnboarding() {
                     if (continuing) return;
                     setContinuing(true);
                     router.push("/settings?onboarding=1");
+                    router.refresh();
                   }}
                 >
                   Continue to Protection Setup <Icon name="arrow" />

@@ -62,30 +62,26 @@ export function mapFundingReadiness(
 }
 
 export type WorkerStatus = "ONLINE" | "DEGRADED" | "OFFLINE" | "NOT_STARTED";
+export const WORKER_DEGRADED_AFTER_MS = 30_000;
+export const WORKER_OFFLINE_AFTER_MS = 60_000;
 export type MonitoringPresentation = {
   state: WorkerStatus;
   active: boolean;
   dashboardLabel: "ACTIVE" | "INACTIVE" | "DEGRADED" | "UNAVAILABLE";
   sidebar: { heading: string; detail: string; tone: "good" | "warn" | "neutral" };
 };
-export function mapWorkerHealth(input: {
-  enabled: boolean;
-  lastCheck: Date | string | null;
-  lastRunStatus: string | null;
-  pollingIntervalMs: number;
-  now?: Date;
-}) {
-  const last = input.lastCheck ? new Date(input.lastCheck) : null;
+export function mapWorkerHealth(input: { lastHeartbeatAt: Date | string | null; now?: Date }) {
+  const last = input.lastHeartbeatAt ? new Date(input.lastHeartbeatAt) : null;
   const now = input.now ?? new Date();
   const age = last ? now.getTime() - last.getTime() : Number.POSITIVE_INFINITY;
   const status: WorkerStatus = !last
     ? "NOT_STARTED"
-    : !input.enabled || age > input.pollingIntervalMs * 5
+    : age > WORKER_OFFLINE_AFTER_MS
       ? "OFFLINE"
-      : input.lastRunStatus === "FAILED" || age > input.pollingIntervalMs * 2.5
+      : age > WORKER_DEGRADED_AFTER_MS
         ? "DEGRADED"
         : "ONLINE";
-  return { status, lastCheck: last?.toISOString() ?? null };
+  return { status, lastHeartbeatAt: last?.toISOString() ?? null };
 }
 
 export type ProtectionIndicator = {

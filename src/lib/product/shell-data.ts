@@ -3,6 +3,7 @@ import { cache } from "react";
 import { getPrisma } from "../db/prisma";
 import { shouldShowProtectionAttention } from "./models";
 import type { RiskLevel } from "../protection/types";
+import { readWorkerHeartbeat } from "../monitoring/heartbeat";
 import {
   mapProtectionIndicator,
   mapMonitoringPresentation,
@@ -25,7 +26,7 @@ async function loadShellDataUncached(
 ): Promise<ShellData> {
   try {
     const db = getPrisma();
-    const [policy, snapshot, decision, monitoringRun] = await Promise.all([
+    const [policy, snapshot, decision, heartbeat] = await Promise.all([
       db.protectionPolicy.findUnique({
         where: { userId_chainId: { userId: protectedAccountId, chainId } },
         select: {
@@ -54,11 +55,7 @@ async function loadShellDataUncached(
           },
         },
       }),
-      db.monitoringRun.findFirst({
-        where: { userId: protectedAccountId, chainId },
-        orderBy: { startedAt: "desc" },
-        select: { status: true, completedAt: true },
-      }),
+      readWorkerHeartbeat(chainId),
     ]);
 
     let riskLevel: RiskLevel = decision?.riskLevel ?? "SAFE";
@@ -82,13 +79,7 @@ async function loadShellDataUncached(
       hasActionableCandidate: Boolean(decision?.candidates.length),
     });
     const worker = mapWorkerHealth({
-      enabled: policy?.enabled ?? false,
-      lastCheck: monitoringRun?.completedAt ?? null,
-      lastRunStatus: monitoringRun?.status ?? null,
-      pollingIntervalMs: Math.max(
-        30_000,
-        Number(process.env.MONITOR_POLL_INTERVAL_MS ?? 60_000) || 60_000,
-      ),
+      lastHeartbeatAt: heartbeat?.lastHeartbeatAt ?? null,
     });
     const policyEnabled = policy?.enabled ?? false;
     const monitoring = mapMonitoringPresentation({
