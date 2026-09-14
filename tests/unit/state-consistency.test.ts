@@ -186,4 +186,27 @@ describe("empty and isolated product states", () => {
       'initial.enabled && policy.enabled ? "Protection enabled" : "Enable protection"',
     );
   });
+
+  it("refreshes monitoring immediately before starting the 15-second poll", () => {
+    const shell = source("src/components/app-shell.tsx");
+    const immediate = shell.indexOf("void refreshMonitoring();");
+    const polling = shell.indexOf("window.setInterval(() => void refreshMonitoring(), 15_000)");
+    expect(immediate).toBeGreaterThan(-1);
+    expect(polling).toBeGreaterThan(immediate);
+  });
+
+  it("prevents overlapping monitoring refreshes and refreshes after visibility restoration", () => {
+    const shell = source("src/components/app-shell.tsx");
+    expect(shell).toContain("if (controller) return");
+    expect(shell).toContain('document.visibilityState === "visible"');
+    expect(shell).toContain('addEventListener("visibilitychange", onVisibilityChange)');
+    expect(shell).toContain('removeEventListener("visibilitychange", onVisibilityChange)');
+  });
+
+  it("converges sidebar state directly from the lightweight server response", () => {
+    const shell = source("src/components/app-shell.tsx");
+    expect(shell).toContain("setPolicyEnabled(data.policyEnabled)");
+    expect(shell).toContain("setWorkerStatus(data.workerStatus)");
+    expect(shell).toContain("setShellLoaded(true)");
+  });
 });

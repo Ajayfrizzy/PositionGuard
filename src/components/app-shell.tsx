@@ -60,25 +60,15 @@ export function AppShell({
         (
           data: {
             protectionAttention?: boolean;
-            policyEnabled?: boolean;
-            workerStatus?: WorkerStatus;
             protectionIndicator?: ProtectionIndicator;
           } | null,
         ) => {
           if (!data) return;
           setProtectionAttention(Boolean(data.protectionAttention));
-          setPolicyEnabled(Boolean(data.policyEnabled));
-          setWorkerStatus(data.workerStatus ?? "NOT_STARTED");
           setProtectionIndicator(data.protectionIndicator ?? null);
         },
       )
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError"))
-          setShellUnavailable(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setShellLoaded(true);
-      });
+      .catch(() => undefined);
     return () => controller.abort();
   }, [session.authenticated]);
 
@@ -87,7 +77,7 @@ export function AppShell({
     let stopped = false;
     let controller: AbortController | null = null;
     const refreshMonitoring = async () => {
-      controller?.abort();
+      if (controller) return;
       controller = new AbortController();
       try {
         const response = await fetch("/api/monitor/status", {
@@ -103,17 +93,28 @@ export function AppShell({
           setPolicyEnabled(data.policyEnabled);
           setWorkerStatus(data.workerStatus);
           setShellUnavailable(false);
+          setShellLoaded(true);
         }
       } catch (error) {
-        if (!stopped && !(error instanceof DOMException && error.name === "AbortError"))
+        if (!stopped && !(error instanceof DOMException && error.name === "AbortError")) {
           setShellUnavailable(true);
+          setShellLoaded(true);
+        }
+      } finally {
+        controller = null;
       }
     };
+    void refreshMonitoring();
     const interval = window.setInterval(() => void refreshMonitoring(), 15_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void refreshMonitoring();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       stopped = true;
       controller?.abort();
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [session.authenticated]);
 

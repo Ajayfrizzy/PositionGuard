@@ -19,7 +19,6 @@ export async function GET(request: Request) {
         ...(parsed.data.unreadOnly === "true" ? { readAt: null } : {}),
       },
       orderBy: { createdAt: "desc" },
-      take: 100,
     }),
     db.notification.count({ where: { userId, readAt: null } }),
   ]);

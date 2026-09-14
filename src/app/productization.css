@@ -171,6 +171,27 @@
 .notification-list {
   margin-top: 18px;
 }
+.notification-views {
+  display: flex;
+  gap: 6px;
+  margin-top: 18px;
+}
+.notification-views button {
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: #8496aa;
+  font-size: 9px;
+  font-weight: 700;
+}
+.notification-views button:hover,
+.notification-views button:focus-visible,
+.notification-views button.active {
+  border-color: rgba(99, 167, 255, 0.45);
+  background: rgba(99, 167, 255, 0.08);
+  color: #c6d9ec;
+}
 .notification-list article {
   display: grid;
   grid-template-columns: 8px 1fr auto;
@@ -210,6 +231,19 @@
   border: 0;
   color: var(--green);
   font-size: 9px;
+}
+.notification-update-group {
+  margin-top: 10px;
+}
+.notification-update-group > summary {
+  cursor: pointer;
+  color: #7eafff;
+  font-size: 9px;
+  font-weight: 700;
+}
+.notification-update-group article.compact {
+  grid-template-columns: 1fr auto;
+  padding: 12px 0 4px;
 }
 .explanation-card details {
   margin-top: 14px;

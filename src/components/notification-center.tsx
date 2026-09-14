@@ -1,17 +1,12 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusPill } from "./ui";
 import { LoadingButton } from "./loading-button";
-type Notice = {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  readAt: string | null;
-  webhookStatus: string;
-  createdAt: string;
-};
+import {
+  buildMeaningfulNotifications,
+  type NotificationRecord as Notice,
+} from "@/lib/notifications/presentation";
 const labels: Record<string, string> = {
   RISK_WATCH: "Risk increased",
   RISK_HIGH: "Risk increased",
@@ -30,8 +25,10 @@ export function NotificationCenter() {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [view, setView] = useState<"meaningful" | "all">("meaningful");
   const requestInFlight = useRef(false);
   const mounted = useRef(false);
+  const meaningful = useMemo(() => buildMeaningfulNotifications(notices), [notices]);
   const load = useCallback(async (initial = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
@@ -113,6 +110,11 @@ export function NotificationCenter() {
         <div>
           <span className="label">Notification center</span>
           <h2>Meaningful protection events</h2>
+          {!loading && (
+            <small>
+              {meaningful.length} meaningful · {notices.length} total
+            </small>
+          )}
         </div>
         <div className="button-row">
           <LoadingButton
@@ -137,6 +139,26 @@ export function NotificationCenter() {
           )}
         </div>
       </div>
+      <div className="notification-views" role="tablist" aria-label="Notification view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "meaningful"}
+          className={view === "meaningful" ? "active" : ""}
+          onClick={() => setView("meaningful")}
+        >
+          Meaningful
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "all"}
+          className={view === "all" ? "active" : ""}
+          onClick={() => setView("all")}
+        >
+          All notifications
+        </button>
+      </div>
       {error && (
         <div className={error === "Your session expired." ? "session-expired" : undefined}>
           <p className="form-status error">{error}</p>
@@ -154,48 +176,59 @@ export function NotificationCenter() {
         </div>
       ) : notices.length ? (
         <div className="notification-list">
-          {notices.map((notice) => (
-            <article className={notice.readAt ? "read" : "unread"} key={notice.id}>
-              <span className="notification-dot" />
-              <div>
-                <div>
-                  <b>
-                    {notice.type === "MEI_SELECTED" && notice.title.includes("updated")
-                      ? "Protection recommendation updated"
-                      : (labels[notice.type] ?? notice.title)}
-                  </b>
-                  <StatusPill
-                    tone={
-                      notice.type.includes("FAILED") || notice.type.includes("BLOCKED")
-                        ? "danger"
-                        : notice.type.includes("RISK") || notice.type === "APPROVAL_REQUIRED"
-                          ? "warn"
-                          : "good"
-                    }
+          {view === "all"
+            ? notices.map((notice) => (
+                <NotificationRow
+                  notice={notice}
+                  pendingId={pendingId}
+                  mark={mark}
+                  key={notice.id}
+                />
+              ))
+            : meaningful.map((item) =>
+                item.kind === "notification" ? (
+                  <NotificationRow
+                    notice={item.notice}
+                    pendingId={pendingId}
+                    mark={mark}
+                    key={item.notice.id}
+                  />
+                ) : (
+                  <article
+                    className={item.notices.some((notice) => !notice.readAt) ? "unread" : "read"}
+                    key={item.id}
                   >
-                    {notice.readAt ? "READ" : "NEW"}
-                  </StatusPill>
-                </div>
-                <h3>{notice.title}</h3>
-                <p>{notice.message}</p>
-                <small>
-                  {new Date(notice.createdAt).toLocaleString()} · Delivery{" "}
-                  {notice.webhookStatus.toLowerCase()}
-                </small>
-              </div>
-              {!notice.readAt && (
-                <LoadingButton
-                  className="notification-read-button"
-                  pending={pendingId === notice.id}
-                  pendingLabel="Updating…"
-                  disabled={Boolean(pendingId)}
-                  onClick={() => void mark(notice.id)}
-                >
-                  Mark read
-                </LoadingButton>
+                    <span className="notification-dot" />
+                    <div className="notification-group-copy">
+                      <div>
+                        <b>Protection recommendation updated</b>
+                        <StatusPill tone="good">
+                          {item.notices.some((notice) => !notice.readAt) ? "NEW" : "READ"}
+                        </StatusPill>
+                      </div>
+                      <h3>{item.notices.length} recalculations during this risk period</h3>
+                      <p>
+                        Latest: {item.action.type === "REPAY_DEBT" ? "Repay" : "Add collateral"}{" "}
+                        {item.action.amount} {item.action.asset.toUpperCase()}
+                      </p>
+                      <details className="notification-update-group">
+                        <summary>View {item.notices.length} updates</summary>
+                        <div>
+                          {[...item.notices].reverse().map((notice) => (
+                            <NotificationRow
+                              notice={notice}
+                              pendingId={pendingId}
+                              mark={mark}
+                              compact
+                              key={notice.id}
+                            />
+                          ))}
+                        </div>
+                      </details>
+                    </div>
+                  </article>
+                ),
               )}
-            </article>
-          ))}
         </div>
       ) : error ? null : (
         <p className="empty-row">
@@ -204,5 +237,60 @@ export function NotificationCenter() {
         </p>
       )}
     </section>
+  );
+}
+
+function NotificationRow({
+  notice,
+  pendingId,
+  mark,
+  compact = false,
+}: {
+  notice: Notice;
+  pendingId: string | null;
+  mark: (notificationId?: string) => Promise<void>;
+  compact?: boolean;
+}) {
+  return (
+    <article className={`${notice.readAt ? "read" : "unread"}${compact ? " compact" : ""}`}>
+      {!compact && <span className="notification-dot" />}
+      <div>
+        <div>
+          <b>
+            {notice.type === "MEI_SELECTED" && notice.title.includes("updated")
+              ? "Protection recommendation updated"
+              : (labels[notice.type] ?? notice.title)}
+          </b>
+          <StatusPill
+            tone={
+              notice.type.includes("FAILED") || notice.type.includes("BLOCKED")
+                ? "danger"
+                : notice.type.includes("RISK") || notice.type === "APPROVAL_REQUIRED"
+                  ? "warn"
+                  : "good"
+            }
+          >
+            {notice.readAt ? "READ" : "NEW"}
+          </StatusPill>
+        </div>
+        <h3>{notice.title}</h3>
+        <p>{notice.message}</p>
+        <small>
+          {new Date(notice.createdAt).toLocaleString()} · Delivery{" "}
+          {notice.webhookStatus.toLowerCase()}
+        </small>
+      </div>
+      {!notice.readAt && (
+        <LoadingButton
+          className="notification-read-button"
+          pending={pendingId === notice.id}
+          pendingLabel="Updating…"
+          disabled={Boolean(pendingId)}
+          onClick={() => void mark(notice.id)}
+        >
+          Mark read
+        </LoadingButton>
+      )}
+    </article>
   );
 }
