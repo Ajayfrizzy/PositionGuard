@@ -1464,9 +1464,9 @@ td small {
   padding-left: 18px;
   border-left: 1px solid #203246;
 }
-.execution-event {
-  margin: 8px -10px;
-  padding: 18px 10px;
+.audit-event.execution-event {
+  margin: 12px 0;
+  padding: 24px 22px;
   border: 1px solid rgba(32, 230, 155, 0.18);
   border-radius: 8px;
   background: rgba(32, 230, 155, 0.025);
@@ -2401,6 +2401,9 @@ table {
   .monitoring-group > summary {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .audit-event.execution-event {
+    padding: 18px 14px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
