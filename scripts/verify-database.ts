@@ -9,6 +9,7 @@ const tables = [
   "CandidateAction",
   "Execution",
   "AuditEvent",
+  "WorkerHeartbeat",
   "_prisma_migrations",
 ];
 const id = `positionguard_verification_${randomUUID()}`;
@@ -19,8 +20,21 @@ try {
     { table_name: string }[]
   >`SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()`;
   const missingTables = tables.filter((t) => !found.some((r) => r.table_name === t));
-  if (missingTables.length) {
-    console.error(JSON.stringify({ ok: false, code: "MIGRATIONS_NOT_APPLIED", missingTables }));
+  const heartbeatColumns = await db.$queryRaw<
+    { column_name: string }[]
+  >`SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'WorkerHeartbeat'`;
+  const missingColumns = ["environment"].filter(
+    (column) => !heartbeatColumns.some((row) => row.column_name === column),
+  );
+  if (missingTables.length || missingColumns.length) {
+    console.error(
+      JSON.stringify({
+        ok: false,
+        code: "MIGRATIONS_NOT_APPLIED",
+        missingTables,
+        missingColumns: missingColumns.map((column) => `WorkerHeartbeat.${column}`),
+      }),
+    );
     process.exitCode = 1;
   } else {
     await db.$transaction(

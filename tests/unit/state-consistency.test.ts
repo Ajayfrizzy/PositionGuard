@@ -223,6 +223,15 @@ describe("empty and isolated product states", () => {
     expect(worker).toContain("recordWorkerHeartbeat({ chainId, instanceId");
   });
 
+  it("namespaces heartbeat identity so local workers cannot make production appear online", () => {
+    const heartbeat = source("src/lib/monitoring/heartbeat.ts");
+    const compose = source("compose.yaml");
+    expect(heartbeat).toContain("chainId_workerName_environment");
+    expect(heartbeat).toContain('process.env.NODE_ENV === "production"');
+    expect(compose.match(/WORKER_ENVIRONMENT: production/g)).toHaveLength(2);
+    expect(source("scripts/verify-database.ts")).toContain("missingColumns.map((column)");
+  });
+
   it("refreshes monitoring immediately before starting the 15-second poll", () => {
     const shell = source("src/components/app-shell.tsx");
     const immediate = shell.indexOf("void refreshMonitoring();");

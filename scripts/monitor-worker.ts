@@ -3,6 +3,7 @@ import { runMonitoringWorker } from "../src/lib/monitoring/worker";
 import {
   recordWorkerHeartbeat,
   WORKER_HEARTBEAT_INTERVAL_MS,
+  workerEnvironment,
   workerName,
 } from "../src/lib/monitoring/heartbeat";
 import { getDefaultChain } from "../src/lib/chains/config";
@@ -69,6 +70,7 @@ console.log(
     heartbeatIntervalMs: WORKER_HEARTBEAT_INTERVAL_MS,
     chainId,
     workerName: workerName(),
+    workerEnvironment: workerEnvironment(),
     instanceId,
     timestamp: new Date().toISOString(),
   }),

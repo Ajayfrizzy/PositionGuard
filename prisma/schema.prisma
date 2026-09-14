@@ -292,12 +292,13 @@ model WorkerHeartbeat {
   id              String   @id @default(cuid())
   chainId         Int
   workerName      String   @db.VarChar(100)
+  environment     String   @db.VarChar(100)
   lastHeartbeatAt DateTime
   startedAt       DateTime
   instanceId      String   @db.VarChar(100)
   updatedAt       DateTime @updatedAt
 
-  @@unique([chainId, workerName])
+  @@unique([chainId, workerName, environment])
   @@index([lastHeartbeatAt])
 }
 

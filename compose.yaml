@@ -6,6 +6,7 @@ services:
       - ./certs/supabase-ca.crt:/app/certs/supabase-ca.crt:ro
     environment:
       NODE_ENV: production
+      WORKER_ENVIRONMENT: production
       HOSTNAME: 0.0.0.0
       PORT: 3000
     ports:
@@ -33,6 +34,7 @@ services:
       - ./certs/supabase-ca.crt:/app/certs/supabase-ca.crt:ro
     environment:
       NODE_ENV: production
+      WORKER_ENVIRONMENT: production
       WORKER_HEARTBEAT_PATH: /tmp/positionguard-worker/heartbeat
     init: true
     restart: unless-stopped
