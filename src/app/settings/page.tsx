@@ -31,6 +31,8 @@ export default async function SettingsPage({
               chainId={data.network.chainId}
               spender={getChain(data.network.chainId).aavePoolAddress}
               onboarding={onboarding}
+              initialAssessment={data.fundingAssessment}
+              actionRequired={data.currentDecisionIsActionable}
             />
           </div>
         }

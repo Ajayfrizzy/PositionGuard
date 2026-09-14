@@ -121,7 +121,7 @@ describe("product readiness presentation", () => {
   it("does not render contradictory empty funding state details", () => {
     const panel = source("src/components/funding-panel.tsx");
     expect(panel).toMatch(/\{readiness && \(\s*<dl>/);
-    expect(panel).toContain("mapFundingReadiness(null)");
+    expect(panel).toContain("mapFundingReadiness(null, actionRequired");
   });
   it("returns a non-error state for a safe position without an MEI", () => {
     const route = source("src/app/api/funding-readiness/route.ts");

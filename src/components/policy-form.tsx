@@ -30,7 +30,11 @@ const fields = [
     "Daily maximum",
     "Aggregate automatic capital permitted in 24 hours.",
   ],
-  ["approvalRequiredAboveUsd", "Ask me above", "Larger actions must wait for explicit approval."],
+  [
+    "approvalRequiredAboveUsd",
+    "Approval required above",
+    "Actions above this amount require explicit approval.",
+  ],
 ] as const;
 export function PolicyForm({
   initial,
@@ -131,10 +135,10 @@ export function PolicyForm({
               </b>
               <small>
                 {mode === "MONITOR_ONLY"
-                  ? "No transactions will be submitted. PositionGuard will alert you when risk increases."
+                  ? "Monitor risk and alert me. No transactions are submitted."
                   : mode === "REQUIRE_APPROVAL"
-                    ? "PositionGuard will prepare protection, but you will approve execution."
-                    : "PositionGuard will act automatically within the limits you set."}
+                    ? "Prepare protection and wait for my approval."
+                    : "Act automatically within the limits I set."}
               </small>
             </label>
           ))}
@@ -146,10 +150,7 @@ export function PolicyForm({
               checked={confirmed}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
-            <span>
-              I understand PositionGuard may act automatically without asking each time, only within
-              the limits below.
-            </span>
+            <span>I understand PositionGuard may act automatically within the limits below.</span>
           </label>
         )}
       </section>
@@ -230,13 +231,13 @@ export function PolicyForm({
           checked={policy.allowRepay}
           setChecked={(value) => set("allowRepay", value)}
           title="Repay debt"
-          copy="Allow repayment of supported Aave debt."
+          copy="Allow PositionGuard to repay supported Aave debt."
         />
         <Toggle
           checked={policy.allowAddCollateral}
           setChecked={(value) => set("allowAddCollateral", value)}
           title="Add collateral"
-          copy="Allow supported funding to be supplied as collateral."
+          copy="Allow PositionGuard to supply supported collateral."
         />
       </section>
       <section className="immutable-note">
@@ -254,14 +255,22 @@ export function PolicyForm({
         <span className="label">
           {onboarding ? "Step 6 of 6 — Enable protection" : "Activation summary"}
         </span>
-        <h2>{policy.enabled ? "Protection will be enabled" : "Protection is disabled"}</h2>
+        <h2>
+          {policy.enabled
+            ? initial.enabled
+              ? "Protection is enabled"
+              : "Protection will be enabled"
+            : "Protection is disabled"}
+        </h2>
         <Toggle
           checked={policy.enabled}
           setChecked={(value) => set("enabled", value)}
           title="Enable protection"
           copy={
             policy.enabled
-              ? "Hosted Monitoring will run for this position after you save."
+              ? initial.enabled
+                ? "Hosted monitoring is active for this position."
+                : "Hosted monitoring will begin after you save."
               : "Monitoring and Protection Actions will remain off."
           }
           highlight

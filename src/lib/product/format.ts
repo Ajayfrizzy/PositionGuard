@@ -19,6 +19,19 @@ export function formatCompactUsd(value: string | number | null | undefined) {
   }).format(number);
 }
 
+/** Formats normalized token units for display without changing stored precision. */
+export function formatTokenAmount(value: string | number | null | undefined, symbol: string) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  const maximumFractionDigits = symbol.toUpperCase() === "USDC" ? 6 : 8;
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+    useGrouping: true,
+  }).format(number);
+}
+
 /** Formats protocol ratios (0.85) as user-facing percentages (85%). */
 export function formatPercentageRatio(value: string | number | null | undefined, digits = 2) {
   if (value === null || value === undefined || value === "") return "—";

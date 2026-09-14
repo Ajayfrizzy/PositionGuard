@@ -35,6 +35,7 @@ export async function getProtectionFunding(input: unknown, readerOverride?: Aave
     symbol: asset.symbol,
     balance: formatUnits(current, asset.decimals),
     balanceUnits: current.toString(),
+    requiredAmount: parsed.amount,
     requiredUnits: required.toString(),
     sufficient: current >= required,
     blockNumber: block.number.toString(),

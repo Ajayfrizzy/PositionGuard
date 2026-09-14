@@ -1,5 +1,5 @@
 import "server-only";
-import { parseAbi, type Address } from "viem";
+import { formatUnits, parseAbi, type Address } from "viem";
 import { z } from "zod";
 import { getChain } from "../chains/config";
 import { getProtectionAsset, assetSymbolSchema } from "../chains/assets";
@@ -48,13 +48,16 @@ export async function getAaveAllowance(input: unknown, readerOverride?: AaveRead
         blockNumber: block.number,
       }),
     );
+    const compared = compareAllowance(allowance, required);
     return {
       chainId: chain.chainId,
       asset: asset.address as Address,
       owner: parsed.sender,
       spender: chain.aavePoolAddress,
       blockNumber: block.number.toString(),
-      ...compareAllowance(allowance, required),
+      ...compared,
+      displayAllowance: formatUnits(allowance, asset.decimals),
+      displayRequiredAmount: parsed.amount,
     };
   } catch (error) {
     if (error instanceof AaveReadError) throw error;

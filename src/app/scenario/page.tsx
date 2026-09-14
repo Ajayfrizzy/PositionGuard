@@ -3,6 +3,7 @@ import { StressForm } from "@/components/stress-form";
 import { loadScenarioData as loadProductData } from "@/lib/product/current-data";
 import { createScenarioAuthorization } from "@/lib/stress/scenario-auth";
 import { Icon } from "@/components/icons";
+import { formatNumber, timeAgo } from "@/lib/product/format";
 export const dynamic = "force-dynamic";
 export default async function ScenarioPage() {
   const data = await loadProductData();
@@ -31,6 +32,19 @@ export default async function ScenarioPage() {
       <div className="simulation-state" role="note">
         <b>SIMULATION ONLY</b>
         <span>NO ONCHAIN STATE CHANGED</span>
+      </div>
+      <div className="scenario-snapshot" role="note" aria-label="Live position snapshot used">
+        <span>Based on live position</span>
+        <b>HF {formatNumber(data.position.healthFactor, 4)}</b>
+        <b>
+          Snapshot block{" "}
+          {data.position.blockNumber ? `#${data.position.blockNumber}` : "unavailable"}
+        </b>
+        <small>
+          {data.position.capturedAt
+            ? `Updated ${timeAgo(data.position.capturedAt)}`
+            : "Not captured"}
+        </small>
       </div>
       <section className="scenario-intro">
         <div className="round-icon">

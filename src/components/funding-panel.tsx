@@ -3,29 +3,47 @@ import { useState } from "react";
 import { StatusPill } from "./ui";
 import { LoadingButton } from "./loading-button";
 import { fundingCta, mapFundingReadiness, type FundingUxStatus } from "@/lib/product/status";
+import { timeAgo } from "@/lib/product/format";
+import type { FundingReadinessState } from "@/lib/funding/readiness";
 type Readiness = {
-  state: string;
+  state: FundingReadinessState;
   requiredAsset: string;
   requiredAmount: string;
   availableBalance: string | null;
   currentAllowance: string | null;
   requiredAllowance: string;
   sender: string | null;
+  reason: string | null;
 };
+type PersistedAssessment = Readiness & { checkedAt: string };
 export function FundingPanel({
   chainId,
   spender,
   onboarding = false,
+  initialAssessment = null,
+  actionRequired = false,
 }: {
   chainId: number;
   spender: string;
   onboarding?: boolean;
+  initialAssessment?: PersistedAssessment | null;
+  actionRequired?: boolean;
 }) {
   const [data, setData] = useState<{
     state: FundingUxStatus;
     readiness: Readiness | null;
     ux: { status: FundingUxStatus; explanation: string; action: string | null };
-  } | null>(null);
+    checkedAt: string;
+  } | null>(
+    initialAssessment
+      ? {
+          state: initialAssessment.state,
+          readiness: initialAssessment,
+          ux: mapFundingReadiness(initialAssessment),
+          checkedAt: initialAssessment.checkedAt,
+        }
+      : null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [technicalError, setTechnicalError] = useState("");
@@ -49,7 +67,8 @@ export function FundingPanel({
     }
   }
   const readiness = data?.readiness;
-  const ux = data?.ux ?? mapFundingReadiness(null);
+  const ux =
+    data?.ux ?? mapFundingReadiness(null, actionRequired ? "NOT_CHECKED" : "NO_ACTION_REQUIRED");
   const tone =
     ux.status === "READY"
       ? "good"
@@ -64,7 +83,13 @@ export function FundingPanel({
           <span className="label">
             {onboarding ? "Step 5 of 6 — Review funding" : "Protection Funding"}
           </span>
-          <h2>Make protection ready</h2>
+          <h2>
+            {ux.status === "READY"
+              ? "Protection funding ready"
+              : ux.status === "NO_ACTION_REQUIRED"
+                ? "No action required"
+                : "Make protection ready"}
+          </h2>
           <p className="section-description">
             PositionGuard never moves funds or requests unlimited approval silently.
           </p>
@@ -82,19 +107,27 @@ export function FundingPanel({
               </div>
               <div>
                 <dt>Required amount</dt>
-                <dd>{readiness?.requiredAmount ?? "—"}</dd>
+                <dd>
+                  {readiness?.requiredAmount ?? "—"} {readiness.requiredAsset}
+                </dd>
               </div>
               <div>
                 <dt>Available protection balance</dt>
-                <dd>{readiness?.availableBalance ?? "Unavailable"}</dd>
+                <dd>
+                  {readiness?.availableBalance ?? "Unavailable"} {readiness.requiredAsset}
+                </dd>
               </div>
               <div>
                 <dt>Current Aave allowance</dt>
-                <dd>{readiness?.currentAllowance ?? "Unavailable"}</dd>
+                <dd>
+                  {readiness?.currentAllowance ?? "Unavailable"} {readiness.requiredAsset}
+                </dd>
               </div>
               <div>
                 <dt>Required allowance</dt>
-                <dd>{readiness?.requiredAllowance ?? "—"}</dd>
+                <dd>
+                  {readiness?.requiredAllowance ?? "—"} {readiness.requiredAsset}
+                </dd>
               </div>
               <div>
                 <dt>Protection Account</dt>
@@ -107,6 +140,10 @@ export function FundingPanel({
                 <dd>
                   <code>{spender}</code>
                 </dd>
+              </div>
+              <div>
+                <dt>Last verified</dt>
+                <dd>{data.checkedAt ? timeAgo(data.checkedAt) : "Not verified"}</dd>
               </div>
             </dl>
           )}

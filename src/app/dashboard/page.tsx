@@ -13,6 +13,7 @@ import { loadDashboardData } from "@/lib/product/current-data";
 import { formatCompactUsd, formatNumber, shortAddress, timeAgo } from "@/lib/product/format";
 import { deterministicExplanation } from "@/lib/agent/explanation";
 import { protectionRecommendation } from "@/lib/product/models";
+import { mapFundingReadiness } from "@/lib/product/status";
 
 export const dynamic = "force-dynamic";
 const riskTone = (risk: string) =>
@@ -28,6 +29,12 @@ export default async function DashboardPage() {
     executionMode: data.policy.executionMode,
   });
   const execution = data.latestExecution;
+  const funding = mapFundingReadiness(
+    data.fundingAssessment,
+    data.currentDecisionIsActionable ? "NOT_CHECKED" : "NO_ACTION_REQUIRED",
+  );
+  const currentHealthFactor = Number(data.position.healthFactor);
+  const targetHealthFactor = Number(data.policy.targetHealthFactor);
   const explanation = deterministicExplanation({
     healthFactor: data.position.healthFactor,
     target: data.policy.targetHealthFactor,
@@ -122,7 +129,9 @@ export default async function DashboardPage() {
               </div>
               <p className="health-copy">
                 {data.riskLevel === "SAFE"
-                  ? "Your position currently meets the configured safety target."
+                  ? currentHealthFactor > targetHealthFactor + 0.0005
+                    ? "Your position is currently above the configured safety target."
+                    : "Your position currently meets the configured safety target."
                   : "Your position is below the configured safety target. PositionGuard has evaluated defensive actions."}
               </p>
               <div className="health-meta">
@@ -178,13 +187,7 @@ export default async function DashboardPage() {
             </div>
             <div>
               <span>Funding readiness</span>
-              <b>
-                {data.fundingReadiness === "READY"
-                  ? "READY"
-                  : data.fundingReadiness
-                    ? data.fundingReadiness.replaceAll("_", " ")
-                    : "NOT CHECKED"}
-              </b>
+              <b>{funding.status.replaceAll("_", " ")}</b>
             </div>
             <div>
               <span>Configured target</span>
@@ -281,7 +284,11 @@ export default async function DashboardPage() {
         <Card>
           <div className="section-heading">
             <div>
-              <span className="label">Latest protection event</span>
+              <span className="label">
+                {execution?.status === "CONFIRMED"
+                  ? "LATEST VERIFIED PROTECTION"
+                  : "LATEST PROTECTION EVENT"}
+              </span>
               <h2>
                 {execution
                   ? execution.status === "CONFIRMED"
@@ -297,7 +304,7 @@ export default async function DashboardPage() {
             )}
           </div>
           {execution ? (
-            <div className="event-summary">
+            <div className="event-summary historical-event">
               <div className="event-icon">
                 <Icon name="check" />
               </div>
@@ -311,6 +318,11 @@ export default async function DashboardPage() {
                 <small>
                   {timeAgo(execution.completedAt ?? execution.createdAt)} · KeeperHub{" "}
                   {execution.keeperHubExecutionId ? "verified" : "pending"}
+                </small>
+                <small>
+                  {execution.status === "CONFIRMED"
+                    ? "Previous verified execution · not the current position state"
+                    : "Previous execution record · not the current position state"}
                 </small>
               </div>
               <div className="hf-change">

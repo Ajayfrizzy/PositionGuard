@@ -141,8 +141,8 @@ describe("empty and isolated product states", () => {
     const policy = source("src/components/policy-form.tsx");
     expect(policy).toContain("Enable Protection");
     expect(policy).toContain("Save Protection Settings");
-    expect(policy).toContain("No transactions will be submitted.");
-    expect(policy).toContain("you will approve execution");
-    expect(policy).toContain("will act automatically");
+    expect(policy).toContain("No transactions are submitted.");
+    expect(policy).toContain("wait for my approval");
+    expect(policy).toContain("Act automatically within the limits I set.");
   });
 });

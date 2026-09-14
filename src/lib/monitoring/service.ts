@@ -375,6 +375,9 @@ export async function runProtectedAccountCycle(
         }
       }
     }
+    const fundingReadinessContext = readiness
+      ? { ...readiness, checkedAt: new Date().toISOString() }
+      : null;
     if (result.riskLevel !== "SAFE" && (result.status === "NO_SAFE_ACTION" || blockerReason)) {
       blockerReason ??= "POLICY_REJECTED";
       if (persisted.decisionId)
@@ -384,7 +387,9 @@ export async function runProtectedAccountCycle(
             status: "PROTECTION_BLOCKED",
             blockerReason,
             fundingReadiness: readiness?.state,
-            fundingReadinessContext: readiness ? JSON.parse(JSON.stringify(readiness)) : undefined,
+            fundingReadinessContext: fundingReadinessContext
+              ? JSON.parse(JSON.stringify(fundingReadinessContext))
+              : undefined,
           },
         });
       await db.auditEvent.create({
@@ -412,7 +417,7 @@ export async function runProtectedAccountCycle(
         where: { id: persisted.decisionId },
         data: {
           fundingReadiness: readiness.state,
-          fundingReadinessContext: JSON.parse(JSON.stringify(readiness)),
+          fundingReadinessContext: JSON.parse(JSON.stringify(fundingReadinessContext)),
         },
       });
     }

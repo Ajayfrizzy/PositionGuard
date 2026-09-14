@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Icon } from "./icons";
 import { StatusPill } from "./ui";
-import { formatNumber } from "@/lib/product/format";
+import { formatNumber, timeAgo } from "@/lib/product/format";
 import {
   buildStressRequest,
   presetPriceDrops,
@@ -25,6 +25,8 @@ type Result = {
   mei: { action: string; asset: string; amount: string } | null;
   requiredCapitalUsd: string | null;
   projectedRecoveryHealthFactor: string | null;
+  snapshotBlockNumber: string | null;
+  snapshotCapturedAt: string;
   result: ProtectionResult;
 };
 type DropChoice = number | "custom";
@@ -190,6 +192,12 @@ function StressResult({ result }: { result: Result }) {
         </div>
         <StatusPill tone={riskTone(result.projectedRisk)}>{result.projectedRisk} RISK</StatusPill>
       </header>
+      <div className="stress-result-snapshot">
+        <span>Simulation snapshot</span>
+        <b>HF {formatNumber(result.currentHealthFactor, 4)}</b>
+        <b>Block {result.snapshotBlockNumber ? `#${result.snapshotBlockNumber}` : "unavailable"}</b>
+        <small>Updated {timeAgo(result.snapshotCapturedAt)}</small>
+      </div>
       <div className="projected-position">
         <div>
           <span>Current Health Factor</span>

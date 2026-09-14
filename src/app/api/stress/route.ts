@@ -53,12 +53,16 @@ export async function POST(request: Request) {
       enabled: policy.enabled,
     });
     return Response.json(
-      analyzeStress({
-        position: portfolioFromSnapshotContext(snapshot.normalizedContext),
-        policy: validated,
-        asset: input.asset,
-        percentageShock: input.percentageShock,
-      }),
+      {
+        ...analyzeStress({
+          position: portfolioFromSnapshotContext(snapshot.normalizedContext),
+          policy: validated,
+          asset: input.asset,
+          percentageShock: input.percentageShock,
+        }),
+        snapshotBlockNumber: snapshot.blockNumber?.toString() ?? null,
+        snapshotCapturedAt: snapshot.capturedAt.toISOString(),
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

@@ -1,4 +1,5 @@
 import type { CandidateAction, RiskLevel } from "../protection/types";
+import type { FundingReadinessState } from "../funding/readiness";
 
 export type ConnectionState = "connected" | "disconnected" | "unknown";
 export interface ProductPolicy {
@@ -113,6 +114,18 @@ export interface ProductData {
   error: string | null;
   monitoring: { active: boolean; lastCheck: string | null; status: string | null };
   fundingReadiness: string | null;
+  fundingAssessment: {
+    state: FundingReadinessState;
+    requiredAsset: string;
+    requiredAmount: string;
+    availableBalance: string | null;
+    currentAllowance: string | null;
+    requiredAllowance: string;
+    sender: string | null;
+    reason: string | null;
+    checkedAt: string;
+  } | null;
+  totalActivityEvents: number;
 }
 
 export function protectionDecisionState(

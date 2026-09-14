@@ -5,6 +5,7 @@ import {
   formatCompactUsd,
   formatNumber,
   formatPercentageRatio,
+  formatTokenAmount,
   shortAddress,
   timeAgo,
 } from "@/lib/product/format";
@@ -134,9 +135,9 @@ export default async function PositionPage() {
                   <th>Asset</th>
                   <th>Collateral enabled</th>
                   <th>Liquidation threshold</th>
-                  <th>Supplied value</th>
-                  <th>Debt value</th>
-                  <th>Wallet value</th>
+                  <th>Supplied amount / value</th>
+                  <th>Debt amount / value</th>
+                  <th>Protection balance / value</th>
                 </tr>
               </thead>
               <tbody>
@@ -154,9 +155,24 @@ export default async function PositionPage() {
                       )}
                     </td>
                     <td>{formatPercentageRatio(row.liquidationThreshold)}</td>
-                    <td>{formatCompactUsd(row.suppliedUsd)}</td>
-                    <td>{formatCompactUsd(row.debtUsd)}</td>
-                    <td>{formatCompactUsd(row.walletBalanceUsd)}</td>
+                    <td>
+                      <b>
+                        {formatTokenAmount(row.suppliedBalance, row.symbol)} {row.symbol}
+                      </b>
+                      <small>{formatCompactUsd(row.suppliedUsd)}</small>
+                    </td>
+                    <td>
+                      <b>
+                        {formatTokenAmount(row.debtBalance, row.symbol)} {row.symbol}
+                      </b>
+                      <small>{formatCompactUsd(row.debtUsd)}</small>
+                    </td>
+                    <td>
+                      <b>
+                        {formatTokenAmount(row.walletBalance, row.symbol)} {row.symbol}
+                      </b>
+                      <small>{formatCompactUsd(row.walletBalanceUsd)}</small>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -201,11 +217,15 @@ function AssetTable({
               </div>
               <div>
                 <b>
-                  {columns === "supplied"
-                    ? row.suppliedBalance
-                    : columns === "debt"
-                      ? row.debtBalance
-                      : row.walletBalance}
+                  {formatTokenAmount(
+                    columns === "supplied"
+                      ? row.suppliedBalance
+                      : columns === "debt"
+                        ? row.debtBalance
+                        : row.walletBalance,
+                    row.symbol,
+                  )}{" "}
+                  {row.symbol}
                 </b>
                 <small>
                   {formatCompactUsd(

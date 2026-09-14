@@ -8,6 +8,24 @@ export interface TimelineEvent {
   tone: "good" | "warn" | "danger" | "neutral";
   execution?: ExecutionView;
 }
+export type ActivityFilter = "important" | "all" | "monitoring" | "executions" | "warnings";
+
+export const isRoutineMonitoringEvent = (event: TimelineEvent) =>
+  event.type === "POSITION_MONITORED" ||
+  event.type === "MONITORING_COMPLETED" ||
+  event.type === "MONITORING_RUN";
+
+export function filterAuditTimeline(events: TimelineEvent[], filter: ActivityFilter) {
+  if (filter === "all") return events.filter((event) => !isRoutineMonitoringEvent(event));
+  if (filter === "monitoring") return [];
+  if (filter === "executions")
+    return events.filter(
+      (event) => Boolean(event.execution) || /EXECUTION|SIMULATION/.test(event.type),
+    );
+  if (filter === "warnings")
+    return events.filter((event) => event.tone === "warn" || event.tone === "danger");
+  return events.filter((event) => !isRoutineMonitoringEvent(event));
+}
 const humanize = (value: string) =>
   value
     .toLowerCase()

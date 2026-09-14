@@ -33,13 +33,25 @@ export interface FundingReadinessDependencies {
     assetSymbol: "USDC" | "WETH";
     sender: `0x${string}`;
     amount: string;
-  }): Promise<{ balanceUnits: string; requiredUnits: string; sufficient: boolean }>;
+  }): Promise<{
+    balanceUnits: string;
+    requiredUnits: string;
+    balance?: string;
+    requiredAmount?: string;
+    sufficient: boolean;
+  }>;
   allowance(input: {
     chainId: number;
     assetSymbol: "USDC" | "WETH";
     sender: `0x${string}`;
     amount: string;
-  }): Promise<{ currentAllowance: string; requiredAmount: string; sufficient: boolean }>;
+  }): Promise<{
+    currentAllowance: string;
+    requiredAmount: string;
+    displayAllowance?: string;
+    displayRequiredAmount?: string;
+    sufficient: boolean;
+  }>;
 }
 const defaults: FundingReadinessDependencies = {
   verifySender: (chainId) => verifyKeeperHub(undefined, undefined, chainId),
@@ -114,8 +126,8 @@ export async function assessFundingReadiness(
     return {
       ...base,
       sender: expected,
-      availableBalance: funding.balanceUnits,
-      requiredAllowance: funding.requiredUnits,
+      availableBalance: funding.balance ?? funding.balanceUnits,
+      requiredAllowance: funding.requiredAmount ?? funding.requiredUnits,
       state: "INSUFFICIENT_BALANCE",
       reason: "INSUFFICIENT_FUNDING",
     };
@@ -129,18 +141,18 @@ export async function assessFundingReadiness(
     return {
       ...base,
       sender: expected,
-      availableBalance: funding.balanceUnits,
-      currentAllowance: allowance.currentAllowance,
-      requiredAllowance: allowance.requiredAmount,
+      availableBalance: funding.balance ?? funding.balanceUnits,
+      currentAllowance: allowance.displayAllowance ?? allowance.currentAllowance,
+      requiredAllowance: allowance.displayRequiredAmount ?? allowance.requiredAmount,
       state: "INSUFFICIENT_ALLOWANCE",
       reason: "ALLOWANCE_REQUIRED",
     };
   return {
     ...base,
     sender: expected,
-    availableBalance: funding.balanceUnits,
-    currentAllowance: allowance.currentAllowance,
-    requiredAllowance: allowance.requiredAmount,
+    availableBalance: funding.balance ?? funding.balanceUnits,
+    currentAllowance: allowance.displayAllowance ?? allowance.currentAllowance,
+    requiredAllowance: allowance.displayRequiredAmount ?? allowance.requiredAmount,
     state: "READY",
     reason: null,
   };

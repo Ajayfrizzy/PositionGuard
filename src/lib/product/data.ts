@@ -108,12 +108,21 @@ function positionFromSnapshot(
           : "0";
       const storedUsd = (value: unknown, rawValue: string) =>
         typeof value === "string" || typeof value === "number" ? String(value) : usd(rawValue);
+      const normalizedDebt = hasFormattedReserves
+        ? reserve.variableDebt !== undefined || reserve.stableDebt !== undefined
+          ? formatUnits(
+              parseUnits(string(reserve.variableDebt), decimals) +
+                parseUnits(string(reserve.stableDebt), decimals),
+              decimals,
+            )
+          : string(reserve.debtBalance)
+        : amount(debtRaw);
       return {
         asset: string(reserve.asset ?? reserve.id, "unknown"),
         symbol: string(reserve.symbol, "Asset"),
         suppliedBalance: hasFormattedReserves ? suppliedRaw : amount(suppliedRaw),
         suppliedUsd: storedUsd(reserve.suppliedUsd, suppliedRaw),
-        debtBalance: hasFormattedReserves ? debtRaw : amount(debtRaw),
+        debtBalance: normalizedDebt,
         debtUsd: storedUsd(reserve.debtUsd, debtRaw),
         walletBalance: hasFormattedReserves ? walletRaw : amount(walletRaw),
         walletBalanceUsd: storedUsd(reserve.walletBalanceUsd, walletRaw),
@@ -191,7 +200,8 @@ async function loadProductDataUncached(
   try {
     const db = getPrisma();
     const configuredWallet = process.env.AAVE_WALLET_ADDRESS?.toLowerCase();
-    const needsDecision = view === "full" || view === "dashboard" || view === "protection";
+    const needsDecision =
+      view === "full" || view === "dashboard" || view === "protection" || view === "settings";
     const needsActivity = view === "full" || view === "activity";
     const needsLatestExecution = needsActivity || view === "dashboard" || view === "protection";
     const userPromise = db.user.findFirst({
@@ -205,6 +215,7 @@ async function loadProductDataUncached(
               : undefined,
       orderBy: { createdAt: "desc" },
       include: {
+        _count: { select: { auditEvents: true } },
         policies: { where: { chainId: network.chainId }, orderBy: { updatedAt: "desc" }, take: 1 },
         snapshots: {
           where: { chainId: network.chainId },
@@ -254,6 +265,9 @@ async function loadProductDataUncached(
               take: executionTake,
             })
           : [];
+    const totalExecutionCount = user
+      ? await db.execution.count({ where: { decision: { userId: user.id } } })
+      : 0;
     const policyRow = user?.policies[0];
     const policy: ProductPolicy = policyRow
       ? {
@@ -345,6 +359,37 @@ async function loadProductDataUncached(
       createdAt: event.createdAt.toISOString(),
       metadata: record(event.metadata),
     }));
+    const fundingContext = record(decision?.fundingReadinessContext);
+    const fundingAssessment = decision?.fundingReadiness
+      ? {
+          state: decision.fundingReadiness,
+          requiredAsset: string(fundingContext.requiredAsset, "Not selected"),
+          requiredAmount: string(fundingContext.requiredAmount, "—"),
+          availableBalance:
+            fundingContext.availableBalance === null ||
+            fundingContext.availableBalance === undefined
+              ? null
+              : string(fundingContext.availableBalance),
+          currentAllowance:
+            fundingContext.currentAllowance === null ||
+            fundingContext.currentAllowance === undefined
+              ? null
+              : string(fundingContext.currentAllowance),
+          requiredAllowance: string(fundingContext.requiredAllowance, "—"),
+          sender:
+            fundingContext.sender === null || fundingContext.sender === undefined
+              ? null
+              : string(fundingContext.sender),
+          reason:
+            fundingContext.reason === null || fundingContext.reason === undefined
+              ? null
+              : string(fundingContext.reason),
+          checkedAt:
+            typeof fundingContext.checkedAt === "string"
+              ? fundingContext.checkedAt
+              : decision.createdAt.toISOString(),
+        }
+      : null;
     const selectedCandidate =
       candidates.find((candidate) => candidate.state === "selected") ?? null;
     const decisionIsCurrent = Boolean(
@@ -390,6 +435,7 @@ async function loadProductDataUncached(
         status: worker.status,
       },
       fundingReadiness: decision?.fundingReadiness ?? null,
+      fundingAssessment,
       database: "connected",
       aave: position.capturedAt ? "connected" : "unknown",
       position,
@@ -407,6 +453,7 @@ async function loadProductDataUncached(
       auditEvents,
       positionChangedAt:
         auditEvents.find((event) => event.type === "POSITION_CHANGED")?.createdAt ?? null,
+      totalActivityEvents: (user?._count.auditEvents ?? auditEvents.length) + totalExecutionCount,
       error: null,
     };
   } catch (error) {
@@ -419,6 +466,7 @@ async function loadProductDataUncached(
       protectedAccountId: null,
       monitoring: { active: false, lastCheck: null, status: null },
       fundingReadiness: null,
+      fundingAssessment: null,
       database: "disconnected",
       aave: "unknown",
       position: {
@@ -441,6 +489,7 @@ async function loadProductDataUncached(
       executions: [],
       auditEvents: [],
       positionChangedAt: null,
+      totalActivityEvents: 0,
       error:
         "Live product data is temporarily unavailable. Check the database connection and migrations.",
     };
