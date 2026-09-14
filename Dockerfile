@@ -15,5 +15,7 @@ COPY --from=build --chown=positionguard:positionguard /app/scripts ./scripts
 COPY --from=build --chown=positionguard:positionguard /app/src ./src
 COPY --from=build --chown=positionguard:positionguard /app/node_modules ./node_modules
 COPY --from=build --chown=positionguard:positionguard /app/package.json ./package.json
+COPY --from=build --chown=positionguard:positionguard /app/prisma ./prisma
+COPY --from=build --chown=positionguard:positionguard /app/prisma.config.ts ./prisma.config.ts
 USER positionguard
 CMD ["node", "server.js"]
