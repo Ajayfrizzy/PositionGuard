@@ -11,8 +11,8 @@ export const metadata: Metadata = {
   description:
     "An autonomous defense layer for Aave V3 borrowing positions that computes, constrains, executes, and verifies the Minimum Effective Intervention.",
   icons: {
-    icon: [{ url: "/positionguard-mark.png", type: "image/png" }],
-    apple: [{ url: "/positionguard-mark.png", type: "image/png" }],
+    icon: [{ url: "/favicon-64.png", type: "image/png", sizes: "64x64" }],
+    apple: [{ url: "/apple-touch-icon.png", type: "image/png", sizes: "180x180" }],
   },
   openGraph: {
     type: "website",
