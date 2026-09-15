@@ -2,148 +2,304 @@
 
 **Autonomous Aave Position Defense**
 
-PositionGuard observes an Aave V3 account, assesses liquidation risk, evaluates bounded defensive actions, selects the Minimum Effective Intervention (MEI), validates a user-owned policy, and routes only a canonical approved intent through KeeperHub. It then verifies the transaction receipt, Aave event, and resulting health factor.
+PositionGuard is an autonomous defense layer for user-owned Aave V3 borrowing positions. It continuously reads a coherent position snapshot, classifies liquidation risk, computes the Minimum Effective Intervention (MEI) needed to reach the user's target health factor, applies the user's action and capital limits, and routes only a server-built canonical intervention through KeeperHub. A submitted transaction is not treated as success until its receipt, Aave event, and resulting position state have been independently checked.
 
-Base Sepolia is the default hackathon environment. Its assets have no real-world value.
+The hackathon deployment uses **Aave V3 on Base Sepolia**. Testnet assets have no real-world value.
 
-## Problem
+- **Live application:** [positionguard.online](https://positionguard.online)
+- **Technical architecture:** [docs/architecture.md](docs/architecture.md)
+- **Main Track evidence:** [docs/judging-criteria.md](docs/judging-criteria.md)
 
-DeFi borrowers must continuously watch health factors, compare possible interventions, prepare capital, and react before liquidation. A basic auto-repay rule can overreact, waste capital, use stale state, or submit an action that no longer matches the position.
+## The problem
 
-## Solution
+An Aave borrower must keep track of health factor, collateral prices, debt exposure, available intervention capital, and timing. A simplistic automation rule is unsafe: the position can change after analysis; a bot can over-repay, consume too much collateral, violate the user's policy, lack balance or allowance, duplicate a request, or mistake a submitted or reverted transaction for successful protection.
+
+PositionGuard addresses both halves of the problem: deciding what the smallest permitted response is, and proving that the intended response actually happened.
+
+## The solution
 
 ```text
-Observe → Assess risk → Evaluate candidates → Select MEI → Validate policy
-        → Simulate → Revalidate Aave state → Execute → Verify receipt → Verify improved HF
+Wallet connection
+  → signed ownership verification
+  → Aave position detection
+  → user protection policy
+  → hosted monitoring worker
+  → block-pinned Aave snapshot
+  → risk classification and candidate generation
+  → Minimum Effective Intervention
+  → policy, funding, and allowance checks
+  → KeeperHub simulation
+  → immediate canonical revalidation
+  → KeeperHub broadcast
+  → receipt and Aave-event verification
+  → post-execution health-factor verification
+  → audit trail and notifications
 ```
 
-The product lives at `/dashboard`, `/position`, `/protection`, `/activity`, and `/settings`. `/dev/aave` remains an operator-only engineering verifier.
+This is more than an alerting dashboard or a fixed auto-repay rule. PositionGuard determines and constrains the intervention. KeeperHub provides the controlled simulation and execution route. PositionGuard then verifies the result independently over RPC. If the live policy, selected effect, or position changes during preparation, the stale intervention is cancelled instead of being sent.
 
-## Why this is not a simple auto-repay bot
+## Minimum Effective Intervention (MEI)
 
-- It considers repayment and collateral supply across normalized supported assets.
-- It models health-factor outcomes and finds the smallest effective token-unit action.
-- It enforces balance, action, capital, daily, cooldown, approval, and supply-cap constraints.
-- It reloads policy and Aave state on the server. The browser cannot provide amount, asset, target, calldata, ABI, or token address.
-- It cancels stale decisions and verifies receipts, Aave effects, and post-execution health factor.
+For every supported reserve in the position, the deterministic engine considers two protocol-specific effects:
 
-## Minimum Effective Intervention
+- **Repay debt:** reduce variable debt for the protected account.
+- **Add collateral:** supply an already eligible collateral asset on behalf of the protected account.
 
-MEI is the smallest policy-compliant action expected to restore the position to its configured safety target. PositionGuard uses exact integer arithmetic and a binary search at token-unit resolution. Every candidate remains visible with projected HF, capital requirement, policy status, and rejection reason. The deterministic engine—not AI—is authoritative.
+The engine projects the health factor for candidate token amounts, checks whether each candidate reaches the configured target, applies the saved policy and funding constraints, then ranks valid candidates by exact capital value. A bounded binary search finds the smallest effective amount at the asset's token-unit precision. The selected MEI is therefore the smallest evaluated, permitted single action expected to restore the target under the captured Aave state—not a claim of global optimization across swaps, multi-action portfolios, gas, or future price changes.
 
-## Protection policy
-
-Each wallet/chain policy stores health-factor thresholds (`target > warning > emergency > 1`), maximum intervention, daily spend, approval threshold, allowed actions, cooldown, and enabled state. The settings API validates every field with Zod. Neither UI nor AI can relax these constraints during execution.
+Candidates and their projected HF, estimated capital, policy status, approval status, and rejection reasons are persisted and shown on the Protection page. The deterministic engine is authoritative; AI cannot select or change the action.
 
 ## Aave V3 integration
 
-Reads are pinned to one block and include account totals, reserves, supplied/debt balances, wallet protection balances, collateral flags, prices, liquidation thresholds, and eMode. Runtime checks verify chain ID, deployed code, Addresses Provider links, oracle base currency, Pool, and Data Provider before trusting data. Base Sepolia and Base mainnet configuration is centralized in `src/lib/chains/`.
+The server-side Aave reader obtains and normalizes:
 
-## KeeperHub integration and execution safety
+- account collateral, debt, available borrows, health factor, LTV, and eMode;
+- supplied, variable-debt, and stable-debt balances by reserve;
+- wallet balances, token decimals, and oracle prices;
+- collateral-enabled state and each reserve's liquidation threshold;
+- active, paused, frozen, isolation, and supply-cap information; and
+- the configured Pool, Pool Data Provider, Addresses Provider, and oracle relationships.
 
-Server-only builders create canonical Aave `repay` and `supply` intents from allowlists. The protection request body is a strict empty object: “protect the configured wallet,” never “send this transaction.” The server independently loads active policy, reads live state, recomputes MEI, and binds the selected effect to the expected KeeperHub sender.
+All reads for a snapshot are pinned to one block. The block hash is checked again before accepting the observation. Reconciliation failures and unsupported eMode, stable-debt, or isolation estimation fail closed instead of producing an unsafe intervention.
 
-The server-only execution orchestrator implements sender, funding, allowance, simulation, immediate state revalidation, explicit authorization, durable idempotency, broadcast, polling, receipt/Aave-event verification, post-state verification, and persistence. Simulation is exposed to the product UI. Broadcast additionally requires a separate `POSITIONGUARD_BROADCAST_TOKEN`; the normal operator token alone cannot authorize value movement. No generic transaction API is exposed.
+Execution support is intentionally narrower than read discovery: the current canonical action allowlist is USDC and WETH on configured Base networks, using Aave V3 `repay(..., onBehalfOf)` or `supply(..., onBehalfOf)`. The hackathon evidence and default environment are Base Sepolia (chain `84532`). See [Aave integration](docs/aave-integration.md).
 
-## Revalidation and receipt verification
+## KeeperHub integration
 
-Analysis remains advisory until the server reads the position again. If HF, debt, balances, reserve state, selected candidate, or policy changed materially, PositionGuard cancels the old decision and shows `POSITION CHANGED`. Success requires an independent successful RPC receipt, expected Aave effect/event, canonical transaction identity, and post-execution snapshot showing the resulting HF. `SUBMITTED` is not success.
+KeeperHub is the execution infrastructure, not a substitute RPC endpoint. PositionGuard:
+
+1. authenticates with a server-only organization API key;
+2. verifies the organization wallet, expected execution-wallet pin, chain support, and disclosed capabilities;
+3. submits the exact canonical Aave call in simulation mode;
+4. requires a successful non-reverting simulation with the expected sender and target;
+5. broadcasts with a durable idempotency key only after canonical revalidation;
+6. persists the KeeperHub execution ID and polls execution status; and
+7. requires verified KeeperHub receipt evidence before performing independent RPC and Aave checks.
+
+The browser may request only a mode (`simulate` or, for the operator-only endpoint, `broadcast`). It cannot provide a target, calldata, ABI, function, asset, token address, amount, sender, or beneficiary. Those fields are rebuilt on the server from the current policy, live Aave state, allowlists, and configured execution wallet.
+
+For interactive/operator broadcast, the normal operator credential is insufficient on its own: a separate short-lived effect-bound authorization derived from `POSITIONGUARD_BROADCAST_TOKEN` is required. The worker uses a separate server-only autonomous entry point; it can broadcast only when the persisted policy is enabled in `AUTONOMOUS` mode and after the same revalidation, funding, allowance, simulation, idempotency, and verification sequence.
+
+See [KeeperHub integration](docs/keeperhub-integration.md) and [the execution-wallet model](docs/execution-wallet-model.md).
+
+## Verified KeeperHub execution
+
+The repository's canonical persisted historical record documents one confirmed Base Sepolia protection:
+
+| Evidence               | Value                                                                                                                |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Before HF              | `1.549918707188866008`                                                                                               |
+| Selected intervention  | Repay `0.212852 USDC`                                                                                                |
+| KeeperHub execution ID | `r2glntpejp16jxatt6th8`                                                                                              |
+| Transaction            | [`0xc140…d7ba1`](https://sepolia.basescan.org/tx/0xc140daf6aed1e8e0623eaadbaee7dee5a59ffe860c9bd576d606401d761d7ba1) |
+| After HF               | `1.599999884615885683`                                                                                               |
+
+During the documentation audit, a read-only Base Sepolia RPC check independently confirmed that the transaction succeeded at block `46623821`. Its Aave V3 Pool `Repay` event records `212852` units of the configured six-decimal USDC for the protected account, with the configured KeeperHub execution wallet as repayer. The before/after HF and KeeperHub ID are persisted application evidence; the local audit environment could not reach the production database and therefore did not independently re-query those three fields.
+
+The Dashboard, Protection, and Activity views do not contain hardcoded success values. They select a `CONFIRMED`, `receiptVerified` execution and its related decision/snapshot from PostgreSQL. A currently safe position may correctly show **No action required** while this separately labeled historical execution remains visible.
+
+## Autonomous protection
+
+The worker runs independently of the browser and enumerates every enabled protected account. It refreshes Aave state, records the monitoring run and decision, recomputes MEI, checks execution-wallet funding and Pool allowance, and applies the policy's execution mode:
+
+| UI mode               | Stored mode        | Current behavior                                                                                                                         |
+| --------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Monitor Only          | `MONITOR_ONLY`     | Observe, classify, persist, and notify; do not simulate or broadcast.                                                                    |
+| Ask Before Acting     | `REQUIRE_APPROVAL` | Check readiness and simulate an eligible candidate; persist an approval-required state and stop. User-session requests cannot broadcast. |
+| Protect Automatically | `AUTONOMOUS`       | After explicit enablement confirmation, enter the server-only autonomous orchestrator and broadcast only if every safety gate passes.    |
+
+`MONITOR_POLL_INTERVAL_MS` controls the cycle interval and is clamped to at least 30 seconds. A database heartbeat is written every 10 seconds. The UI reports `ONLINE`, `DEGRADED`, `OFFLINE`, or `NOT_STARTED` from heartbeat age. Each account failure is contained so the worker can continue processing other accounts.
+
+## Safety model
+
+Implemented safeguards include:
+
+- signed wallet-ownership challenge with expiry and one-time nonce consumption;
+- database-backed, hashed session tokens in HTTP-only SameSite cookies;
+- wallet and chain scoping for product APIs and stored data;
+- strict threshold ordering, allowed actions, per-action limit, rolling 24-hour spend, approval threshold, and cooldown;
+- exact execution-wallet sender pin, token balance, and bounded Pool allowance checks;
+- server-generated allowlisted Aave intent and strict request schemas;
+- KeeperHub simulation before broadcast;
+- immediate policy/position/candidate fingerprint revalidation and stale cancellation;
+- unique database idempotency key plus an atomic `NOT_STARTED` → `SUBMITTED` claim;
+- KeeperHub status/receipt validation, independent RPC receipt and Aave event verification, and post-state HF improvement check;
+- persisted failed/unconfirmed states, audit events, notifications, and fail-closed errors; and
+- advisory-only AI with schema validation and deterministic fallback.
+
+PositionGuard does not create token approvals. It requires an existing allowance sufficient for the exact bounded action. See [the full safety model](docs/safety-model.md) and [security notes](docs/security.md).
+
+## Scenario / stress testing
+
+The Scenario page applies a user-selected collateral-price drop to the latest persisted position snapshot and runs the same deterministic engine against the stressed portfolio. It shows current HF, stressed HF, risk level, proposed MEI, projected recovery HF, and estimated capital.
+
+This feature is **simulation only**: it does not write on-chain state, submit a blockchain transaction, or change the live monitoring snapshot or policy.
 
 ## AI explanation layer
 
-AI is optional and advisory. A provider receives bounded candidate IDs and summaries; output is Zod-validated and may reference only engine-generated candidates. It can explain risk, rejection, policy, and outcome, but cannot choose amounts, change policy, create calldata, or broadcast. Provider or validation failure uses a deterministic explanation, so the product continues without AI.
+An optional provider may explain the risk state, chosen engine candidate, policy constraints, rejected candidates, and verified outcome. Provider output must pass a strict Zod schema and may reference only candidate IDs produced by the deterministic engine. A timeout, malformed response, or unknown candidate falls back to deterministic text.
 
-## Monitoring
+AI has no path to change the amount, policy, calldata, ABI, target, sender, beneficiary, or broadcast decision.
 
-`POST /api/monitor` runs one authenticated cycle: load policy, capture coherent live Aave state, evaluate risk, persist the decision and every candidate when needed, and append audit events. It does not broadcast recurring transactions, leaving a safe boundary for a future scheduler.
+## Notifications and auditability
+
+Monitoring snapshots, threshold crossings, candidate evaluation, MEI selection, policy and mode updates, stale cancellation, blocked actions, execution states, receipt verification, Aave-event confirmation, failures, and verified outcomes are persisted.
+
+The notification center provides **Meaningful** and **All notifications** views with Risk, Recommendations, Executions, Failures, Delivery, and System filters. Semantically unchanged MEI recalculations and related execution events are grouped without deleting their underlying records; the UI renders 25 items at a time with **Load 25 more**.
+
+In-app notification persistence happens before optional webhook delivery. A webhook failure is recorded as delivery failure and does not turn a successful product execution into a failed execution; the in-app record remains available. See [observability](docs/observability.md).
 
 ## Architecture
 
-```text
-Next.js UI
-  ├─ server mapper ─ PostgreSQL (policy, snapshots, candidates, executions, audit)
-  ├─ policy API ─ Zod validation
-  ├─ monitoring API ─ Aave coherent reader ─ deterministic MEI
-  └─ protection API ─ canonical recomputation ─ [fail-closed broadcaster boundary]
-
-Core: normalized portfolio → exact estimator → candidates → policy → ranker → intent
+```mermaid
+flowchart TD
+  B[Browser + user wallet] -->|signed ownership challenge| N[Next.js application]
+  N --> S[Session + policy layer]
+  W[Hosted monitoring worker] --> S
+  S <--> D[(PostgreSQL)]
+  S --> A[Aave V3 coherent reader]
+  A --> R[Base RPC]
+  A --> E[Deterministic risk + MEI engine]
+  E --> O[Protection orchestrator]
+  O --> K[KeeperHub simulation + execution]
+  K --> C[Base Sepolia / Aave V3]
+  O --> V[Independent receipt, event + post-state verification]
+  V --> R
+  V --> D
+  D --> Q[Audit trail + notifications]
+  Q --> H[Optional signed webhook]
 ```
 
-## Verified Base Sepolia execution
+The browser controls wallet consent and policy configuration, but never transaction construction. The server and worker are the execution trust boundary. PostgreSQL holds policy, decision, execution, monitoring, session, audit, and notification state.
 
-```text
-Before HF 1.549918707188866008
-  → PositionGuard MEI: repay 0.212852 USDC
-  → KeeperHub execution r2glntpejp16jxatt6th8
-  → transaction 0xc140daf6aed1e8e0623eaadbaee7dee5a59ffe860c9bd576d606401d761d7ba1
-  → After HF 1.599999884615885683
-```
+## Tech stack
 
-[View the verified transaction on BaseScan](https://sepolia.basescan.org/tx/0xc140daf6aed1e8e0623eaadbaee7dee5a59ffe860c9bd576d606401d761d7ba1).
+- Next.js 16, React 19, TypeScript 5
+- PostgreSQL with Prisma 7
+- viem for EVM reads, encoding, receipts, and event decoding
+- Zod for request, policy, and external-response validation
+- Vitest and ESLint
+- Docker and Docker Compose on a VPS
+- Aave V3 and KeeperHub on Base Sepolia
 
-The app does not hardcode this record. Dashboard, success, and activity views render it only when the confirmed `Execution` row and relations exist in PostgreSQL.
+## Repository structure
 
-## Setup
+| Path                    | Responsibility                                                           |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `src/app`               | App Router pages and wallet-scoped API routes                            |
+| `src/components`        | Onboarding, policy, execution, funding, monitoring, and notification UI  |
+| `src/lib/aave`          | Coherent Aave reads, normalization, funding/allowance checks, intents    |
+| `src/lib/protection`    | Risk, candidates, MEI estimation, ranking, stress analysis inputs        |
+| `src/lib/execution`     | Preparation, revalidation, authorization, idempotency, verification      |
+| `src/lib/keeperhub`     | Authenticated reads, direct simulation/broadcast/status adapter          |
+| `src/lib/monitoring`    | Hosted worker lifecycle, account cycles, heartbeat, structured logs      |
+| `src/lib/notifications` | Persistence, webhooks, deduplication, grouping, filters                  |
+| `src/lib/security`      | Wallet ownership, sessions, origin checks, operator boundary             |
+| `prisma`                | Schema and migrations                                                    |
+| `scripts`               | Worker, environment, RPC, Aave, KeeperHub, DB, and readiness checks      |
+| `tests`                 | Unit and integration suites                                              |
+| `docs`                  | Architecture, safety, deployment, testing, demo, and submission material |
 
-Requires Node 24, npm, and PostgreSQL.
+### Product routes
+
+| Route            | Purpose                                                                       |
+| ---------------- | ----------------------------------------------------------------------------- |
+| `/onboarding`    | Wallet connection, signed ownership verification, and Aave position detection |
+| `/dashboard`     | Current position, risk, monitoring, and latest verified protection summary    |
+| `/position`      | Aave collateral, debt, reserve, and snapshot details                          |
+| `/protection`    | MEI candidates, readiness, simulation/current state, and historical execution |
+| `/scenario`      | Simulation-only collateral-price stress testing                               |
+| `/activity`      | Audit and execution timeline                                                  |
+| `/notifications` | Meaningful/all views, category filters, and delivery state                    |
+| `/settings`      | Policy, limits, actions, cooldown, and execution mode                         |
+| `/dev/aave`      | Operator-only engineering verifier                                            |
+
+## Getting started
+
+Requirements: Node `>=24 <26` (the repository `.nvmrc` selects Node 24), npm, and PostgreSQL.
 
 ```sh
 nvm use
 npm ci
 cp .env.example .env
-docker compose up -d postgres
+# Configure a reachable PostgreSQL database and required server-only values.
 npm run db:generate
 npm run db:migrate
 npm run dev
 ```
 
-Open `http://localhost:3000`; `/` redirects to `/dashboard`.
+Open `http://localhost:3000`. Unauthenticated users are redirected to `/onboarding`; the wallet flow then opens the product at `/dashboard`.
+
+The provided Compose deployment expects an external PostgreSQL database; it does not define a local `postgres` service. See [VPS deployment](docs/vps-deployment.md).
 
 ## Environment variables
 
-| Variable                         | Purpose                                                    |
-| -------------------------------- | ---------------------------------------------------------- |
-| `DATABASE_URL`                   | Server-only PostgreSQL URL                                 |
-| `BASE_SEPOLIA_RPC_URL`           | Server-only testnet RPC                                    |
-| `BASE_RPC_URL`                   | Optional Base mainnet RPC                                  |
-| `POSITIONGUARD_DEFAULT_CHAIN_ID` | Defaults to `84532`                                        |
-| `AAVE_WALLET_ADDRESS`            | Server-configured protected wallet                         |
-| `POSITIONGUARD_DEV_TOKEN`        | 32+ character operator authorization                       |
-| `KEEPERHUB_API_KEY`              | Server-only KeeperHub credential                           |
-| `KEEPERHUB_BASE_URL`             | Restricted official HTTPS origin                           |
-| `KEEPERHUB_EXECUTION_WALLET`     | Expected sender pin                                        |
-| `POSITIONGUARD_BROADCAST_TOKEN`  | Separate 32+ character step-up authorization for broadcast |
-| `MONITOR_POLL_INTERVAL_MS`       | Worker interval; clamped to at least 30 seconds            |
-| `POSITIONGUARD_WEBHOOK_URL`      | Optional persisted-notification webhook                    |
-| `POSITIONGUARD_WEBHOOK_SECRET`   | Optional HMAC-SHA256 webhook signing secret                |
+Do not commit `.env`, and never expose the following values through `NEXT_PUBLIC_*`.
 
-Never expose these through `NEXT_PUBLIC_` variables.
+| Category                | Variables                                                                                       | Purpose                                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Database                | `DATABASE_URL`, `DATABASE_TLS_ALLOW_SELF_SIGNED`                                                | PostgreSQL connection; self-signed TLS escape hatch is development-only.                                                          |
+| Aave / RPC              | `BASE_SEPOLIA_RPC_URL`, `BASE_RPC_URL`, `POSITIONGUARD_DEFAULT_CHAIN_ID`, `AAVE_WALLET_ADDRESS` | Server-side chain reads and CLI/default worker account selection.                                                                 |
+| KeeperHub               | `KEEPERHUB_API_KEY`, `KEEPERHUB_BASE_URL`, `KEEPERHUB_EXECUTION_WALLET`                         | Organization authentication, restricted official origin, expected execution sender.                                               |
+| Execution authorization | `POSITIONGUARD_BROADCAST_TOKEN`, `POSITIONGUARD_DEV_TOKEN`                                      | Separate operator broadcast step-up secret and development/operator API token. The latter also signs short-lived scenario grants. |
+| Monitoring              | `MONITOR_POLL_INTERVAL_MS`, `WORKER_NAME`, `WORKER_ENVIRONMENT`, `WORKER_HEARTBEAT_PATH`        | Poll interval, heartbeat identity/namespace, and container health file.                                                           |
+| Notifications           | `POSITIONGUARD_WEBHOOK_URL`, `POSITIONGUARD_WEBHOOK_SECRET`                                     | Optional persisted-notification webhook and HMAC signing secret.                                                                  |
 
-## Database and testing
+There is no AI provider credential in the current environment contract; the explanation module accepts an optional server-side provider and otherwise uses deterministic fallback.
 
-Prisma persists users, policies, coherent snapshots, decisions, candidates, executions, and audit events. Apply both migrations. Keep the verified execution as a normal database row; never seed proof values into UI components.
+## Verification commands
 
-```sh
-npm run db:generate
-npm run db:validate
-npm run db:migrate:safe
-npm run verify:db
-npm run lint
-npm run typecheck
-npm test
-npm run build
-```
+All commands below are from `package.json`. None of the verification scripts broadcasts a transaction.
 
-Run one monitoring cycle with `npm run worker:monitor -- --once`, or start the long-running process with `npm run worker:monitor`. Each enabled protected account is processed independently. `MONITOR_ONLY` never simulates or broadcasts, `REQUIRE_APPROVAL` stops after simulation, and only an explicitly confirmed `AUTONOMOUS` policy can enter the existing broadcast orchestrator.
+| Command                                     | What it verifies                                                                                                                    |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run verify:env`                        | Required configuration formats without printing secrets.                                                                            |
+| `npm run verify:rpc`                        | RPC chain, Aave deployments/provider links, oracle base unit, allowlisted reserves, and token metadata.                             |
+| `npm run verify:aave -- [wallet] [chainId]` | Live coherent Aave position read (`verify:network` is the same script).                                                             |
+| `npm run verify:keeperhub`                  | Authentication, chain catalog, wallet/profile match, sender pin, and key capabilities; it does **not** prove broadcast.             |
+| `npm run verify:allowance -- USDC 0.212852` | Read-only execution-wallet balance/Pool allowance comparison for an explicit amount.                                                |
+| `npm run verify:db`                         | Database connectivity and temporary create/read/delete probe.                                                                       |
+| `npm run verify:autonomous`                 | Live policy, monitoring persistence, readiness, stress analysis, and KeeperHub **simulation**; reports `broadcastAttempted: false`. |
+| `npm run lint`                              | ESLint checks.                                                                                                                      |
+| `npm run typecheck`                         | Strict TypeScript compilation without output.                                                                                       |
+| `npm test`                                  | Vitest suite.                                                                                                                       |
+| `npm run db:validate`                       | Prisma schema validation.                                                                                                           |
+| `npm run db:generate`                       | Prisma client generation.                                                                                                           |
+| `npm run build`                             | Production Next.js build.                                                                                                           |
 
-Tests cover financial behavior, Aave normalization, policies, candidate mapping, timelines, stale cancellation, confirmed execution/audit mapping, explorer URL safety, AI validation/fallback, testnet labeling, and rejection of arbitrary execution fields.
+`npm run worker:monitor -- --once` performs a real monitoring cycle and may simulate in Ask Before Acting mode or autonomously execute when an enabled policy is explicitly set to Protect Automatically. It is operational, not a routine read-only verification command.
 
-## Demo and known limitations
+## VPS deployment
 
-See [the 2–3 minute demo script](docs/demo.md) and [Base Sepolia runbook](docs/base-sepolia-demo.md).
+Production Compose builds one image and runs it as two supervised services:
 
-- Only configured Base Aave reserves and repay/supply are supported.
-- The worker must be deployed as a supervised process or invoked by hosted cron/job infrastructure.
-- Email delivery remains behind the notification-provider interface; persisted in-app and webhook delivery are implemented.
-- Product authorization currently uses the development operator token rather than wallet-session UX.
-- Database and provider availability depend on deployment networking.
+- `web`: standalone Next.js bound to loopback, with a database-backed `/api/health` check;
+- `worker`: long-running monitoring process with database and file heartbeats; and
+- external PostgreSQL, plus the already configured reverse proxy/TLS layer.
+
+Both containers use `restart: unless-stopped`. Deployments apply migrations, recreate services when code or environment changes, and check web/worker health and structured logs. Full commands are in [docs/vps-deployment.md](docs/vps-deployment.md).
+
+## Known limitations
+
+- The intervention engine is specific to Aave V3; it is not universal DeFi automation.
+- Canonical execution is limited to configured USDC/WETH repay and already-enabled collateral-supply actions on Base networks.
+- eMode, stable-debt, isolation, reconciliation failures, and unsupported reserve conditions block MEI execution.
+- MEI is a single-action, current-state estimate. It does not optimize swaps, gas, future prices, or multi-step strategies.
+- Ask Before Acting stops after successful simulation; the current wallet-session UI does not expose a user-confirmed broadcast path.
+- The post-state verifier requires HF improvement but does not require exact equality with the projected or target HF, because on-chain accrual and rounding can differ.
+- Webhook delivery requires a configured external endpoint; email has only a provider interface.
+- The in-process authentication rate limiter is per application process, not a shared distributed limiter.
+- Base Sepolia is the hackathon environment and its assets have no real-world value. Base mainnet is configured but no mainnet execution is claimed.
+- PositionGuard has not undergone a formal third-party security audit.
+
+## Hackathon
+
+| Field                    | Submission                              |
+| ------------------------ | --------------------------------------- |
+| Event                    | KeeperHub – The Agent Economy Hackathon |
+| Track                    | Best Integration into a Live Project    |
+| Integrated project       | Aave V3                                 |
+| Execution infrastructure | KeeperHub direct execution              |
+| Network                  | Base Sepolia                            |
+
+See the [submission summary](docs/submission.md), [judge-facing criteria map](docs/judging-criteria.md), and [demo walkthrough](docs/demo.md).

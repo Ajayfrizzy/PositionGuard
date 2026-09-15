@@ -1,50 +1,44 @@
-# Read-only Aave V3 integration
+# Aave V3 integration
 
-## Service and data flow
+## Supported networks and contracts
 
-`getAavePosition({ walletAddress, chainId })` in src/lib/aave/service.ts accepts a validated EVM address and either configured Base chain: Base Sepolia 84532 or Base mainnet 8453. A server-created viem PublicClient selects the matching chain and RPC independently; no browser wallet or signer is involved. Tests can inject the narrow AaveReader interface; production always constructs the real RPC reader.
+PositionGuard is configured for Base Sepolia (84532, default hackathon network) and Base mainnet (8453). Contract addresses are centralized in [chain configuration](../src/lib/chains/config.ts) and verified at runtime. No mainnet execution is claimed.
 
-After network verification, all contract reads use one block number. The service obtains account totals from Pool.getUserAccountData and eMode from Pool.getUserEMode. It retrieves the reserve address list, reads user reserve balances and ERC-20 wallet balances, then fetches metadata, reserve configuration, price, pause status, debt ceiling and supply capacity only for relevant holdings. Six discovery workers and small HTTP batches bound concurrency. Scanning the list is necessary to find supplied assets disabled as collateral and wallet-only holdings, which a collateral/borrow bitmap would miss.
+The reader validates RPC chain ID, deployed code, Addresses Provider links to Pool/oracle/Data Provider, Data Provider ownership, and the oracle USD base currency/unit before using state.
 
-The returned domain object contains account summary, every relevant reserve, wallet protection balances, raw integer strings, a normalized portfolio input, blockers, block number/hash/timestamp and fetchedAt. A second read of that block's hash detects a reorg during the read. This is a coherent historical observation, not a guarantee that latest state has not subsequently changed.
+## Coherent position read
 
-## Units and precision
+getAavePosition accepts a validated wallet and supported chain. The server creates the viem client from a server-only RPC variable. It captures a block, pins every account/reserve/token/oracle read to that block, and checks the block hash again to detect a reorganization during the read.
 
-Aave USD totals and oracle prices retain 8 decimal base precision. HF is preserved as the raw 18-decimal WAD and a decimal string. uint256 maximum denotes unbounded HF only when debt is zero. Contradictory no-debt/HF results fail validation. Token balances retain their actual decimals and integer strings. Bigint is used throughout; only bounded decimals and basis points become JavaScript numbers.
+The service reads account collateral, debt, available borrow, HF, LTV, liquidation threshold, and eMode. It discovers reserves from the verified Pool and reads relevant user balances, wallet balances, variable/stable debt, collateral state, metadata, configuration, price, pause/freeze/active state, debt ceiling, supply cap, and aToken supply. Bounded concurrency and request deadlines limit failed RPC work.
 
-Account HF is authoritative for current risk. Display values are not fed back into MEI. JSON serializes raw bigints as decimal integer strings. Snapshot HF is Decimal(78,18), USD fields Decimal(38,8), and the complete read/analysis context remains in JSON.
+The normalized result retains raw integer values, block number/hash/timestamp, decimal display values, reserve-specific liquidation thresholds, and analysis blockers.
 
-Sources for read signatures and semantics: [Pool](https://aave.com/docs/aave-v3/smart-contracts/pool), [Data Provider interface](https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/interfaces/IPoolDataProvider.sol), [account calculation implementation](https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/protocol/libraries/logic/GenericLogic.sol). The deployed market is checked via RPC; repository head alone is not proof of deployed implementation version.
+## Precision and MEI input
 
-## Portfolio model extension
+Aave account HF remains an 18-decimal WAD; oracle/account base values retain their base-unit precision; token balances retain native decimals. Bigint drives normalization and decisions. Display numbers are not fed into execution.
 
-Phase 1 inputs and all original tests remain supported. `evaluateProtection` additionally accepts the discriminated `model: "portfolio-v2"` shape from the Aave normalizer. The additional portfolio modules are protocol-independent integer-value calculations, not contract readers.
+Reserve collateral/debt contributions must reconcile with account totals. Unsupported eMode, stable debt, isolation, or reconciliation adds an analysis blocker, preventing an unsafe MEI. Supply candidates require the reserve to be already collateral-enabled, active, unpaused, unfrozen, non-isolated, and within capacity.
 
-The portfolio retains every asset's identity, decimals, price, available balance, supplied balance, debt balance, eligible collateral threshold and supply capacity. The weighted collateral numerator is the sum of each enabled collateral's base value times its liquidation threshold in basis points. Do not reconstruct this numerator from the rounded account-average liquidation threshold.
+The portfolio engine models:
 
-Repayment reduces only the selected debt asset's contribution, keeping all other debt and collateral intact. Debt base-value rounding (up/down) is chosen only when summed reserve values reconcile with the account total. Additional collateral increases only that asset's weighted contribution, using its own threshold. Outcome calculations retain integer products until the necessary base-unit or final WAD division.
+- variable-debt repayment for the selected reserve; and
+- additional supply using that reserve's liquidation threshold.
 
-The minimum is found with a bounded binary search in actual token units, so a token amount immediately below the selected minimum cannot reach target under this model. Candidate comparison uses exact rational USD cost; six-decimal USD display amounts are conservatively rounded up and never drive ranking or policy checks. Results include tokenAmount and tokenAmountUnits alongside the backwards-compatible normalized USD amount.
+A bounded binary search finds a minimum target-reaching token-unit amount. This is a single-action current-state model, not a prediction of price movement, accrual, gas, swaps, or multi-step strategies.
 
-Account totals and per-reserve values must reconcile. eMode, stable debt, isolation and mismatched totals block unsafe-position MEI rather than creating a fake single-asset position. No debt normally remains SAFE/NO_ACTION. Supply estimates are limited to already-enabled collateral reserves; pause/freeze/cap restrictions are checked. Wallet-only assets are represented but are not assumed to become enabled collateral merely by supply.
+## Execution effects
 
-## Authenticated API
+Canonical actions are narrower than readable reserves. Current allowlists support USDC and WETH per configured Base network. The server builds Aave Pool repay(asset, amount, 2, protectedAccount) or supply(asset, amount, protectedAccount, 0).
 
-Set POSITIONGUARD_DEV_TOKEN to a random value of at least 32 characters. Requests require `Authorization: Bearer <token>`. Missing configuration fails closed. This authenticates a development operator permitted to inspect public wallets; it does **not** prove the wallet belongs to the operator, establish a user session or grant spending authority. Do not use this as production wallet authentication.
+The execution wallet supplies tokens and allowance; the protected account owns the Aave position. PositionGuard checks the execution wallet's underlying balance and Pool allowance independently.
 
-- `GET /api/positions/aave?address=0x...&chainId=84532`: live read and explicit default-policy preview; use 8453 for optional Base mainnet reads. No persistence.
-- `POST /api/positions/aave`: JSON `{ address, chainId, policy }`; fresh live read, policy-validated preview, then one deliberate DECISION snapshot. Failure to save returns SNAPSHOT_PERSISTENCE_FAILED instead of a false saved confirmation.
+After KeeperHub execution, PositionGuard validates the receipt and exact Pool Repay/Supply event, then captures a coherent post-execution position and requires finite HF improvement.
 
-The development policy is clearly displayed and can be changed for a saved analysis. Context explicitly assumes zero prior spend and no cooldown history; it is not an autonomous execution decision. The funding balance is the observed wallet's balance, not an authorized KeeperHub spending wallet. There is no polling or mount-time fetch on /dev/aave.
+## APIs and authorization
 
-`previewPolicy` exists only for explicit development previews. `analyzePosition` requires its policy argument, and future execution preparation uses the server-only `prepareLiveProtectionAnalysis` path, which loads an enabled `ProtectionPolicy` for the exact wallet and chain before making the live Aave read. It fails closed when that policy is absent or disabled; snapshot-embedded analysis settings are not treated as active execution policy.
+Wallet onboarding signs and verifies ownership, creates a database-backed cookie session, and detects the Aave position. Product routes derive wallet/chain scope from that session.
 
-Wallet/address, chain, body and policy inputs are Zod-validated. Responses use no-store, omit internal error messages/stacks, and preserve structured error codes. Per-RPC timeouts, a bounded retry and a 45-second service deadline limit failing reads. Only server code reads BASE_SEPOLIA_RPC_URL or BASE_RPC_URL; the operator enters the development token into memory, with no localStorage or public environment variable.
+The development Aave route remains an operator-only engineering verifier. The operator token is not user ownership proof and is not the only product authorization mechanism.
 
-## Snapshots and limitations
-
-POST upserts an operator-observed User wallet record and creates one snapshot in a database transaction. The record must never be interpreted later as proof of wallet ownership. Additional snapshot purpose values support observation, pre-execution and post-execution reads in future phases. Explicit repeat POSTs intentionally produce new snapshots; GET never does.
-
-There are no Aave/KeeperHub writes, approvals, AI, scheduler or production sessions. Estimates do not include future price changes, accrued debt after the observation block, token-transfer behavior, funding-wallet allowances, gas or exact implementation-specific Aave index rounding after a write. The weighted model may differ slightly from historical versions using a rounded average threshold. Exact simulation, state revalidation and receipt evidence are mandatory before future execution.
-
-Tokens with failed metadata or prices fail the read rather than enabling partial analysis. Native ETH is not silently treated as WETH; only ERC-20 reserve balances are discovered. The source does not provide fresh-oracle-time guarantees merely because a price is nonzero. Phase 3 must verify oracle freshness/sequencer safety and funding/signing semantics.
+See [architecture](architecture.md), [protection engine](protection-engine.md), and [safety](safety-model.md).

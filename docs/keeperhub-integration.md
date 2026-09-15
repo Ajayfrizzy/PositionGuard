@@ -1,54 +1,99 @@
-# KeeperHub integration contract
+# KeeperHub integration
 
-The read client remains GET-only. A separate server-only direct-execution adapter implements strict simulation, broadcast, status polling, and verified-receipt parsing. The reusable orchestrator owns the safety sequence and the UI can request only `simulate` or `broadcast` for the configured protected wallet. No approval, zero-value transfer, or value-moving broadcast was performed during final hardening.
+PositionGuard uses KeeperHub as the controlled execution route for canonical Aave V3 interventions. A GET-only diagnostics client and a separate server-only direct-execution client keep readiness checks distinct from simulation and broadcast.
 
-## Authentication and diagnostics
+## Authentication and execution wallet
 
-Application environment names are KEEPERHUB_API_KEY and optional KEEPERHUB_BASE_URL (default https://app.keeperhub.com). These are our configuration names; KeeperHub receives `Authorization: Bearer <kh_organization_key>`. User webhook keys (wfb_) are not suitable. The current client accepts only the official HTTPS origin and rejects redirects to avoid sending credentials to another host.
+KEEPERHUB_API_KEY is a server-only organization key sent as a Bearer credential. KEEPERHUB_BASE_URL defaults to the official HTTPS application origin; the client rejects other origins and redirects.
 
-`npm run verify:keeperhub`:
+The verification client proves authenticated access, matches the configured key prefix without logging it, validates disclosed capabilities when unambiguous, validates the Base chain catalog entry, compares the organization wallet/profile responses, and enforces the optional KEEPERHUB_EXECUTION_WALLET pin.
 
-1. Requests GET /api/keys before interpreting connectivity as authentication.
-2. Reads up to ten pages to find an unambiguous matching key prefix and its disclosed scope. Missing/ambiguous scope stays unknown; prefixes or secrets are not printed.
-3. Checks the public GET /api/chains catalog for the configured chain, requiring enabled EVM Base Sepolia 84532 with testnet metadata or enabled EVM Base mainnet 8453 without it. Public catalog success alone cannot validate a key.
-4. Reads GET /api/user/wallet and GET /api/user, validates the active organization wallet, and compares addresses.
-5. Checks an optional KEEPERHUB_EXECUTION_WALLET pin and reports the organization ID, wallet and scope capabilities only.
+Wallet/profile responses alone do not prove the eventual EOA or smart-account route. The exact sender is also checked in simulation; direct Pool calls are checked against transaction identity or their exact Aave event.
 
-Only selected fields are returned; names, email addresses, full key responses and credentials are not logged. Non-2xx, timeout, invalid JSON and invalid schemas fail verification. Documented scopes are mcp:read for reads/simulation, mcp:write or mcp:admin for broadcast. An explicitly unscoped legacy key is unrestricted according to KeeperHub; an absent scope field is unknown, not assumed unrestricted.
+## Canonical Aave intent
 
-Sources: [Authentication](https://docs.keeperhub.com/api/authentication), [API keys and pagination](https://docs.keeperhub.com/api/api-keys), [User/organization wallet reads](https://docs.keeperhub.com/api/user).
+The server loads the active wallet/chain policy, reads live Aave state, loads rolling spend/cooldown context, recomputes candidates, and chooses an eligible candidate. The intent builder accepts only the configured chain, an allowlisted symbol (USDC or WETH), deterministic token amount, protected beneficiary, and configured sender.
 
-## Prepared transaction paths
+It supplies the Aave Pool target, ABI, function, arguments, zero native value, and calldata. Repay uses variable-rate mode 2 and the protected account as onBehalfOf; supply uses the protected account as beneficiary and referral code 0.
 
-`buildAaveRepayIntent` and `buildAaveSupplyIntent` accept only chainId, assetSymbol, exact decimal token amount, beneficiary and sender. USDC and WETH are allowlisted separately for each configured chain; Base Sepolia uses Aave's test USDC reserve, not another USDC deployment. Addresses/decimals come from the Aave address book and must also pass runtime verification. No frontend target, ABI, function name, calldata, native value or gas override is accepted.
-
-The output contains a canonical body for future POST /api/execute/contract-call:
-
-- chainId: numeric string
-- contractAddress: configured Aave Pool
-- functionName: repay or supply
-- functionArgs: JSON array string, preserving integers as decimal strings
-- abi: server-defined JSON ABI string
-- value: "0" in native ether units
-
-It also includes locally encoded calldata, token base-unit amount and expectedSender. Equivalent input decimal spellings produce the same serialized request. Serialization regenerates the trusted intent and rejects tampering. The fingerprint binds the expected sender and beneficiary as well as the transaction effect. A fingerprint alone is not a persisted decision idempotency key or authorization.
+The API body cannot supply target, calldata, ABI, function, token, amount, sender, or recipient. Canonical rebuilding detects tampering. The effect fingerprint binds action, sender, beneficiary, asset, amount, and wire body.
 
 ## Controlled execution lifecycle
 
-The orchestrator implements this lifecycle:
+```text
+live policy + Aave read + MEI
+  → sender and capability check
+  → execution-wallet balance check
+  → exact Pool allowance check
+  → KeeperHub simulation
+  → immediate canonical revalidation
+  → unique database reservation and claim
+  → KeeperHub direct broadcast
+  → status polling
+  → KeeperHub receipt validation
+  → independent RPC, Aave event, and post-state verification
+```
 
-1. Load the enabled persisted policy for the exact protected wallet and chain with `prepareLiveProtectionAnalysis`. Missing or disabled policies stop preparation; preview defaults and snapshot-embedded analysis settings are never execution authority. Then perform the policy-approved decision and actual K funding/allowance checks.
-2. Persist the canonical body and a key derived from decision plus effect.
-3. Send the same body with strict boolean simulate=true; require success=true and wouldRevert=false, plus the expected sender/target.
-4. Refresh B's position, K's balances/allowance, policy, cooldown and reserved daily budget immediately before submission. Stale decisions cancel/recompute.
-5. Remove only simulate and submit with the persisted Idempotency-Key.
-6. Persist executionId and poll GET /api/execute/{executionId}/status, honoring X-Poll-Interval-Hint and Retry-After.
-7. Require nonempty receipt evidence: receipts[].verified=true and receiptStatus=success on the expected chain, then independently verify the actual transaction effect and Aave outcome. A completed status or hash alone is insufficient.
+Simulation calls KeeperHub's direct contract-call endpoint with simulate true. PositionGuard requires success, a non-reverting result, the expected sender and Pool target, and a valid gas estimate.
 
-The replay window is 24 hours. Timeouts never justify a new key. Keep the exact canonical values; re-serializing "1" as "1.0" or changing field aliases can create a conflict. Handle idempotency_in_progress by retrying the same work/key; reconcile a conflict using originalExecutionId where provided. Ambiguous outcomes past the replay window must not auto-resubmit. Unconfirmed outcomes are poll/reconcile-only. These details come from [Direct Execution](https://docs.keeperhub.com/api/direct-execution) and [execution recovery](https://docs.keeperhub.com/cli/execution-recovery).
+Before broadcast, PositionGuard reconstructs the canonical preparation. A changed policy version, effect fingerprint, candidate amount, or no-longer-needed intervention produces POSITION_CHANGED and a persisted stale-cancellation event.
 
-## Optional zero-value preflight
+The database idempotency key binds wallet, chain, policy ID/version, action, asset, base-unit amount, and effect fingerprint. A unique constraint plus the conditional NOT_STARTED → SUBMITTED update prevents concurrent duplicate claims.
 
-`buildZeroValueSelfTransfer({ chainId, sender })` only prepares `/api/execute/transfer` with amount "0" and recipient equal to sender. It rejects caller-provided alternate amounts or recipients and marks explicit broadcast authorization required. There is no function that submits it.
+Broadcast removes only the simulation flag, supplies the persisted idempotency key, requires HTTP 202, stores the execution ID, and polls the status endpoint. Poll hints are capped at 30 seconds. The orchestrator waits up to 45 seconds in the current request; ambiguous/non-terminal outcomes become UNCONFIRMED and are not reported as success.
 
-KeeperHub's [first verified transaction guide](https://docs.keeperhub.com/guides/first-verified-transaction) describes a zero-value self-transfer with sponsored gas. Treat this as a future optional mined connectivity check after confirming the actual wallet/gas route. It is still an onchain transaction; it is not automatically permitted by this read-only phase and would not establish Aave allowance or validate repayment semantics.
+## Authorization paths
+
+- A wallet session may request simulation only.
+- The interactive/operator broadcast route requires the operator bearer credential and a separate POSITIONGUARD_BROADCAST_TOKEN. The derived authorization is effect-bound and expires after 60 seconds.
+- The monitoring worker has a server-only autonomous entry point. It verifies that the persisted policy is enabled in AUTONOMOUS mode and passes every other orchestrator gate.
+
+The product exposes no generic execution API and does not silently create token approvals. The execution-wallet-to-Pool allowance must already cover the exact action.
+
+## Receipt, Aave effect, and post-state
+
+A KeeperHub completed status or hash is insufficient. PositionGuard requires receipt evidence on the expected chain where every receipt is verified and successful, with one consistent hash.
+
+It then fetches the transaction and receipt through the configured Base RPC. The receipt must succeed at the reported block. The Aave Pool must emit the expected event with the configured reserve, amount, and protected beneficiary; repay also requires the expected repayer. Finally, PositionGuard captures a new coherent Aave snapshot and requires HF improvement when both HFs are finite.
+
+Only after these checks does the execution become CONFIRMED with receiptVerified true. Exact equality with the projected target is not required because accrual and on-chain rounding may differ.
+
+## Readiness verification
+
+These commands do not broadcast:
+
+```sh
+npm run verify:env
+npm run verify:keeperhub
+npm run verify:allowance -- USDC 0.212852
+```
+
+verify:keeperhub proves authenticated configuration, catalog support, organization wallet consistency, sender pin, and disclosed capability. It does **not** call simulation or broadcast and is not routing proof.
+
+verify:allowance is a read-only balance/allowance comparison. verify:autonomous runs live reads, persistence, readiness, stress analysis, and KeeperHub simulation; its output says broadcastAttempted: false.
+
+## Actual execution evidence
+
+| Field                  | Value                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Network                | Base Sepolia (84532)                                                                                           |
+| Before HF              | 1.549918707188866008                                                                                           |
+| Intervention           | Repay 0.212852 USDC                                                                                            |
+| KeeperHub execution ID | r2glntpejp16jxatt6th8                                                                                          |
+| Transaction            | [BaseScan](https://sepolia.basescan.org/tx/0xc140daf6aed1e8e0623eaadbaee7dee5a59ffe860c9bd576d606401d761d7ba1) |
+| After HF               | 1.599999884615885683                                                                                           |
+
+A read-only RPC check during the final documentation audit independently confirmed a successful receipt at block 46623821 and the Pool's exact Repay event: configured Aave USDC reserve, 212852 base units, protected account as user, and configured KeeperHub execution wallet as repayer. The KeeperHub ID and HFs are persisted repository evidence; the audit machine could not reach production PostgreSQL to re-query them.
+
+The product loads evidence through [the confirmed-execution database selector](../src/lib/product/latest-verified-protection.ts); success values are not embedded in UI components.
+
+## Failure and recovery semantics
+
+- Failed readiness or simulation stops before broadcast.
+- A stale canonical effect is cancelled and audited.
+- Duplicate work returns DUPLICATE_PREVENTED.
+- A timeout or ambiguous submission is persisted as UNCONFIRMED.
+- A terminal KeeperHub failure, invalid receipt, mismatched Aave event, or non-improving post-state becomes failed.
+- Status polling supports in-request recovery; there is no separate background reconciler for previously unconfirmed executions.
+
+See [architecture](architecture.md), [safety](safety-model.md), and [Base Sepolia runbook](base-sepolia-demo.md).
