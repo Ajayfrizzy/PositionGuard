@@ -11,6 +11,7 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 RUN groupadd --system positionguard && useradd --system --gid positionguard positionguard
 COPY --from=build --chown=positionguard:positionguard /app/.next/standalone ./
 COPY --from=build --chown=positionguard:positionguard /app/.next/static ./.next/static
+COPY --from=build --chown=positionguard:positionguard /app/public ./public
 COPY --from=build --chown=positionguard:positionguard /app/scripts ./scripts
 COPY --from=build --chown=positionguard:positionguard /app/src ./src
 COPY --from=build --chown=positionguard:positionguard /app/node_modules ./node_modules
