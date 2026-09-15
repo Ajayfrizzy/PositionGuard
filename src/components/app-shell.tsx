@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Icon, ShieldMark } from "./icons";
+import { Icon } from "./icons";
 import { shortAddress } from "@/lib/product/format";
 import { LiveMonitoringProvider } from "./live-monitoring-context";
 import {
@@ -243,7 +244,14 @@ export function AppShell({
     <div className="app-shell">
       <aside className="sidebar">
         <Link href="/dashboard" className="brand">
-          <ShieldMark className="brand-mark" />
+          <Image
+            className="brand-mark"
+            src="/positionguard-mark.png"
+            alt="Logo"
+            width={40}
+            height={40}
+            priority
+          />
           <span>
             <strong>PositionGuard</strong>
             <small>Autonomous Defense</small>

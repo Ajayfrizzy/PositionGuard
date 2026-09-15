@@ -1,5 +1,9 @@
 # PositionGuard
 
+<p align="center">
+  <img src="public/positionguard-logo.png" alt="PositionGuard — Autonomous Defense" width="560">
+</p>
+
 **Autonomous Aave Position Defense**
 
 PositionGuard is an autonomous defense layer for user-owned Aave V3 borrowing positions. It continuously reads a coherent position snapshot, classifies liquidation risk, computes the Minimum Effective Intervention (MEI) needed to reach the user's target health factor, applies the user's action and capital limits, and routes only a server-built canonical intervention through KeeperHub. A submitted transaction is not treated as success until its receipt, Aave event, and resulting position state have been independently checked.

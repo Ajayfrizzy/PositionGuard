@@ -1,7 +1,8 @@
 "use client";
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Icon, ShieldMark } from "./icons";
+import { Icon } from "./icons";
 import { LoadingButton } from "./loading-button";
 
 type EthereumProvider = {
@@ -241,7 +242,14 @@ export function WalletOnboarding() {
     <main className="onboarding-page">
       <section className="onboarding-card">
         <header>
-          <ShieldMark className="onboarding-mark" />
+          <Image
+            className="onboarding-mark"
+            src="/positionguard-mark.png"
+            alt="PositionGuard logo"
+            width={72}
+            height={72}
+            priority
+          />
           <div>
             <p className="eyebrow">POSITIONGUARD SETUP</p>
             <h1>Protect your Aave position</h1>

@@ -1,21 +1,4 @@
 import type { SVGProps } from "react";
-export function ShieldMark({ className = "" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <path
-        d="M20 3.5 34 9v9.6c0 8.2-5.4 14.9-14 18-8.6-3.1-14-9.8-14-18V9l14-5.5Z"
-        fill="currentColor"
-      />
-      <path
-        d="m13.2 20 4.2 4.1 9.3-9.3"
-        stroke="#07111d"
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 export function Icon({
   name,
   ...props

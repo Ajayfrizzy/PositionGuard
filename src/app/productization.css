@@ -26,8 +26,10 @@
   color: #8193a8;
 }
 .onboarding-mark {
-  width: 50px;
-  color: var(--green);
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  object-fit: contain;
 }
 .onboarding-steps {
   list-style: none;
@@ -349,6 +351,14 @@
   }
   .onboarding-card {
     padding: 22px;
+  }
+  .onboarding-card header {
+    align-items: flex-start;
+  }
+  .onboarding-mark {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
   }
   .onboarding-steps {
     grid-template-columns: 1fr 1fr;

@@ -68,8 +68,10 @@ button {
   padding: 0 8px;
 }
 .brand-mark {
-  width: 34px;
-  color: var(--green);
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  object-fit: contain;
 }
 .brand strong {
   font-size: 17px;
@@ -83,6 +85,20 @@ button {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin-top: 2px;
+}
+@media (max-width: 1180px) and (min-width: 821px) {
+  .brand {
+    gap: 8px;
+    padding-inline: 4px;
+  }
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+  .brand strong {
+    font-size: 16px;
+  }
 }
 .side-nav {
   margin-top: 43px;
