@@ -22,6 +22,7 @@ import {
   reserveCanonicalExecution,
 } from "./persist";
 import { verifyAaveTransaction } from "./verification";
+import { logAutonomousEvent, safeWallet } from "../monitoring/observability";
 import {
   ProtectionExecutionError,
   type CanonicalPreparation,
@@ -109,6 +110,7 @@ async function executeProtectionCore(
     walletAddress?: string;
     chainId?: number;
     candidateId?: string;
+    onCanonicalReady?: (prepared: CanonicalPreparation) => Promise<void>;
   },
   dependencies: OrchestratorDependencies,
   autonomous: boolean,
@@ -129,6 +131,53 @@ async function executeProtectionCore(
     throw new ProtectionExecutionError("AUTONOMOUS_MODE_NOT_ENABLED", "VALIDATING_POLICY");
   const assetSymbol = symbol(prepared.candidate.assetSymbol ?? "");
   const amount = prepared.candidate.tokenAmount!;
+  if (input.mode === "broadcast") {
+    stage("REVALIDATING");
+    const revalidated = await dependencies.revalidate(prepared);
+    if (autonomous)
+      logAutonomousEvent("autonomous-revalidation", {
+        wallet: safeWallet(prepared.walletAddress),
+        chainId: prepared.chainId,
+        action: prepared.intent.action,
+        asset: assetSymbol,
+        amount,
+        canonicalIntentFingerprint: prepared.effectFingerprint,
+        unchanged: revalidated.unchanged,
+        reason: revalidated.unchanged ? "CANONICAL_INTERVENTION_READY" : "POSITION_CHANGED",
+      });
+    if (!revalidated.unchanged) {
+      await dependencies.persistStale(prepared, revalidated.refreshed);
+      if (autonomous)
+        logAutonomousEvent("autonomous-skipped", {
+          wallet: safeWallet(prepared.walletAddress),
+          chainId: prepared.chainId,
+          action: prepared.intent.action,
+          asset: assetSymbol,
+          amount,
+          canonicalIntentFingerprint: prepared.effectFingerprint,
+          reason: "STALE_INTERVENTION_CANCELLED",
+        });
+      return {
+        outcome: "POSITION_CHANGED",
+        stage: "REVALIDATING",
+        stages,
+        currentHealthFactor: prepared.position.account.healthFactor,
+        selectedAction: prepared.intent.action,
+        amount,
+        asset: assetSymbol,
+        projectedHealthFactor: prepared.candidate.expectedHealthFactor,
+        simulation: null,
+        checks: null,
+        effectFingerprint: prepared.effectFingerprint,
+        refreshed: {
+          healthFactor: revalidated.refreshed?.position.account.healthFactor ?? null,
+          action: revalidated.refreshed?.intent.action ?? null,
+          amount: revalidated.refreshed?.candidate.tokenAmount ?? null,
+        },
+      };
+    }
+    await input.onCanonicalReady?.(prepared);
+  }
   stage("VERIFYING_SENDER");
   const sender = await dependencies.verifySender(prepared.chainId);
   if (
@@ -164,6 +213,16 @@ async function executeProtectionCore(
       allowance,
     );
   stage("SIMULATING");
+  if (autonomous)
+    logAutonomousEvent("autonomous-simulation", {
+      wallet: safeWallet(prepared.walletAddress),
+      chainId: prepared.chainId,
+      action: prepared.intent.action,
+      asset: assetSymbol,
+      amount,
+      canonicalIntentFingerprint: prepared.effectFingerprint,
+      status: "started",
+    });
   const simulation = await dependencies.keeperHub.simulate(prepared.intent);
   if (
     !simulation.success ||
@@ -200,21 +259,6 @@ async function executeProtectionCore(
     stage("READY_TO_EXECUTE");
     return { ...common, outcome: "READY_TO_EXECUTE", stage: "READY_TO_EXECUTE" };
   }
-  stage("REVALIDATING");
-  const revalidated = await dependencies.revalidate(prepared);
-  if (!revalidated.unchanged) {
-    await dependencies.persistStale(prepared, revalidated.refreshed);
-    return {
-      ...common,
-      outcome: "POSITION_CHANGED",
-      stage: "REVALIDATING",
-      refreshed: {
-        healthFactor: revalidated.refreshed?.position.account.healthFactor ?? null,
-        action: revalidated.refreshed?.intent.action ?? null,
-        amount: revalidated.refreshed?.candidate.tokenAmount ?? null,
-      },
-    };
-  }
   stage("READY_TO_EXECUTE");
   const authorization = autonomous
     ? true
@@ -246,6 +290,18 @@ async function executeProtectionCore(
       executionId: reservation.execution.id,
     };
   stage("BROADCASTING");
+  if (autonomous)
+    logAutonomousEvent("autonomous-broadcast", {
+      wallet: safeWallet(prepared.walletAddress),
+      chainId: prepared.chainId,
+      decisionId: reservation.execution.decisionId,
+      executionId: reservation.execution.id,
+      action: prepared.intent.action,
+      asset: assetSymbol,
+      amount,
+      canonicalIntentFingerprint: prepared.effectFingerprint,
+      status: "submitting",
+    });
   let submission;
   try {
     submission = await dependencies.keeperHub.broadcast(
@@ -297,6 +353,7 @@ async function executeProtectionCore(
   }
   stage("VERIFYING_RECEIPT");
   let receipt;
+  let post: CanonicalPreparation["position"];
   try {
     receipt = requireSuccessfulKeeperHubReceipt(status, prepared.chainId);
     const proof = await dependencies.verifyChain({
@@ -306,7 +363,7 @@ async function executeProtectionCore(
       intent: prepared.intent,
     });
     stage("VERIFYING_AAVE_POSITION");
-    const post = await dependencies.readPost({
+    post = await dependencies.readPost({
       walletAddress: prepared.walletAddress,
       chainId: prepared.chainId,
     });
@@ -323,6 +380,17 @@ async function executeProtectionCore(
       transactionHash: proof.transactionHash,
       transactionLink: status.transactionLink,
     });
+    if (autonomous)
+      logAutonomousEvent("autonomous-confirmed", {
+        wallet: safeWallet(prepared.walletAddress),
+        chainId: prepared.chainId,
+        decisionId: reservation.execution.decisionId,
+        executionId: submission.executionId,
+        action: prepared.intent.action,
+        asset: assetSymbol,
+        amount,
+        transactionHash: proof.transactionHash,
+      });
   } catch (error) {
     await dependencies.recordFailed(
       reservation.execution.id,
@@ -338,6 +406,8 @@ async function executeProtectionCore(
     executionId: submission.executionId,
     transactionHash: receipt.hash,
     idempotencyKey: reservation.idempotencyKey,
+    effectFingerprint: prepared.effectFingerprint,
+    healthFactorAfter: post.account.healthFactor,
   };
 }
 
@@ -348,6 +418,7 @@ export function executeProtection(
     walletAddress?: string;
     chainId?: number;
     candidateId?: string;
+    onCanonicalReady?: (prepared: CanonicalPreparation) => Promise<void>;
   },
   dependencies: OrchestratorDependencies = defaults,
 ) {
@@ -356,7 +427,12 @@ export function executeProtection(
 
 /** Server-worker-only entry point. It still passes every check in the proven orchestrator. */
 export function executeAutonomousProtection(
-  input: { walletAddress: string; chainId: number; candidateId?: string },
+  input: {
+    walletAddress: string;
+    chainId: number;
+    candidateId?: string;
+    onCanonicalReady?: (prepared: CanonicalPreparation) => Promise<void>;
+  },
   dependencies: OrchestratorDependencies = defaults,
 ) {
   return executeProtectionCore({ ...input, mode: "broadcast" }, dependencies, true);

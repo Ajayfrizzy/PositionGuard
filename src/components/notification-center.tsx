@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusPill } from "./ui";
 import { LoadingButton } from "./loading-button";
 import {
+  buildNotificationItems,
   buildMeaningfulNotifications,
+  deliveryStatusCopy,
+  notificationFilterCount,
+  type NotificationFilter,
   type NotificationRecord as Notice,
 } from "@/lib/notifications/presentation";
 const labels: Record<string, string> = {
@@ -17,18 +21,42 @@ const labels: Record<string, string> = {
   EXECUTION_STARTED: "Execution started",
   EXECUTION_CONFIRMED: "Execution successful",
   EXECUTION_FAILED: "Execution failed",
+  MONITORING_FAILED: "Monitoring failed",
   POSITION_CHANGED: "Position changed",
 };
-export function NotificationCenter() {
+const filters: Array<{ value: NotificationFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "risk", label: "Risk" },
+  { value: "recommendations", label: "Recommendations" },
+  { value: "executions", label: "Executions" },
+  { value: "failures", label: "Failures" },
+  { value: "system", label: "System" },
+];
+export function NotificationCenter({
+  initialFilter = "all",
+}: {
+  initialFilter?: NotificationFilter;
+}) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [error, setError] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<"meaningful" | "all">("meaningful");
+  const [filter, setFilter] = useState<NotificationFilter>(initialFilter);
   const requestInFlight = useRef(false);
   const mounted = useRef(false);
   const meaningful = useMemo(() => buildMeaningfulNotifications(notices), [notices]);
+  const visibleItems = useMemo(
+    () => buildNotificationItems(notices, { meaningful: view === "meaningful", filter }),
+    [filter, notices, view],
+  );
+  const selectedCount = useMemo(() => notificationFilterCount(notices, filter), [filter, notices]);
+  const selectFilter = (value: NotificationFilter) => {
+    setFilter(value);
+    const url = value === "all" ? "/notifications" : `/notifications?filter=${value}`;
+    window.history.replaceState(null, "", url);
+  };
   const load = useCallback(async (initial = false) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
@@ -159,6 +187,24 @@ export function NotificationCenter() {
           All notifications
         </button>
       </div>
+      <nav className="notification-filters" aria-label="Notification filters">
+        {filters.map((item) => (
+          <button
+            type="button"
+            key={item.value}
+            className={filter === item.value ? "active" : ""}
+            aria-pressed={filter === item.value}
+            onClick={() => selectFilter(item.value)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      {!loading && filter !== "all" && (
+        <p className="notification-filter-count">
+          {selectedCount} {filter === "executions" ? "executions" : filter}
+        </p>
+      )}
       {error && (
         <div className={error === "Your session expired." ? "session-expired" : undefined}>
           <p className="form-status error">{error}</p>
@@ -174,61 +220,59 @@ export function NotificationCenter() {
           <span className="button-spinner" aria-hidden="true" />
           Loading notifications…
         </div>
-      ) : notices.length ? (
+      ) : visibleItems.length ? (
         <div className="notification-list">
-          {view === "all"
-            ? notices.map((notice) => (
-                <NotificationRow
-                  notice={notice}
-                  pendingId={pendingId}
-                  mark={mark}
-                  key={notice.id}
-                />
-              ))
-            : meaningful.map((item) =>
-                item.kind === "notification" ? (
-                  <NotificationRow
-                    notice={item.notice}
-                    pendingId={pendingId}
-                    mark={mark}
-                    key={item.notice.id}
-                  />
-                ) : (
-                  <article
-                    className={item.notices.some((notice) => !notice.readAt) ? "unread" : "read"}
-                    key={item.id}
-                  >
-                    <span className="notification-dot" />
-                    <div className="notification-group-copy">
-                      <div>
-                        <b>Protection recommendation updated</b>
-                        <StatusPill tone="good">
-                          {item.notices.some((notice) => !notice.readAt) ? "NEW" : "READ"}
-                        </StatusPill>
-                      </div>
-                      <h3>{item.notices.length} recalculations during this risk period</h3>
-                      <p>
-                        Latest: {item.action.type === "REPAY_DEBT" ? "Repay" : "Add collateral"}{" "}
-                        {item.action.amount} {item.action.asset.toUpperCase()}
-                      </p>
-                      <details className="notification-update-group">
-                        <summary>View {item.notices.length} updates</summary>
-                        <div>
-                          {[...item.notices].reverse().map((notice) => (
-                            <NotificationRow
-                              notice={notice}
-                              pendingId={pendingId}
-                              mark={mark}
-                              compact
-                              key={notice.id}
-                            />
-                          ))}
-                        </div>
-                      </details>
+          {visibleItems.map((item) =>
+            item.kind === "notification" ? (
+              <NotificationRow
+                notice={item.notice}
+                pendingId={pendingId}
+                mark={mark}
+                key={item.notice.id}
+              />
+            ) : item.kind === "mei-group" ? (
+              <article
+                className={item.notices.some((notice) => !notice.readAt) ? "unread" : "read"}
+                key={item.id}
+              >
+                <span className="notification-dot" />
+                <div className="notification-group-copy">
+                  <div>
+                    <b>Protection recommendation updated</b>
+                    <StatusPill tone="good">
+                      {item.notices.some((notice) => !notice.readAt) ? "NEW" : "READ"}
+                    </StatusPill>
+                  </div>
+                  <h3>{item.notices.length} recalculations during this risk period</h3>
+                  <p>
+                    Latest: {item.action.type === "REPAY_DEBT" ? "Repay" : "Add collateral"}{" "}
+                    {item.action.amount} {item.action.asset.toUpperCase()}
+                  </p>
+                  <details className="notification-update-group">
+                    <summary>View {item.notices.length} updates</summary>
+                    <div>
+                      {[...item.notices].reverse().map((notice) => (
+                        <NotificationRow
+                          notice={notice}
+                          pendingId={pendingId}
+                          mark={mark}
+                          compact
+                          key={notice.id}
+                        />
+                      ))}
                     </div>
-                  </article>
-                ),
-              )}
+                  </details>
+                </div>
+              </article>
+            ) : (
+              <ExecutionNotificationGroup
+                item={item}
+                pendingId={pendingId}
+                mark={mark}
+                key={item.id}
+              />
+            ),
+          )}
         </div>
       ) : error ? null : (
         <p className="empty-row">
@@ -237,6 +281,87 @@ export function NotificationCenter() {
         </p>
       )}
     </section>
+  );
+}
+
+function ExecutionNotificationGroup({
+  item,
+  pendingId,
+  mark,
+}: {
+  item: Extract<ReturnType<typeof buildNotificationItems>[number], { kind: "execution-group" }>;
+  pendingId: string | null;
+  mark: (notificationId?: string) => Promise<void>;
+}) {
+  const metadata = item.latest.metadata ?? {};
+  return (
+    <article className={item.notices.some((notice) => !notice.readAt) ? "unread" : "read"}>
+      <span className="notification-dot" />
+      <div className="notification-group-copy">
+        <div>
+          <b>Autonomous protection execution</b>
+          <StatusPill
+            tone={
+              item.notices.some((notice) => notice.type === "EXECUTION_FAILED") ? "danger" : "good"
+            }
+          >
+            {item.latest.type === "EXECUTION_CONFIRMED" ? "CONFIRMED" : "IN PROGRESS"}
+          </StatusPill>
+        </div>
+        <h3>{item.notices.length} recorded execution events</h3>
+        <p>
+          {typeof metadata.action === "string"
+            ? metadata.action.replaceAll("_", " ")
+            : "Protection"}
+          {typeof metadata.amount === "string" ? ` · ${metadata.amount}` : ""}
+          {typeof metadata.asset === "string" ? ` ${metadata.asset}` : ""}
+        </p>
+        <div className="execution-notification-proof">
+          {typeof metadata.executionId === "string" && (
+            <span>
+              KeeperHub ID <code>{metadata.executionId}</code>
+            </span>
+          )}
+          {typeof metadata.transactionHash === "string" && (
+            <span>
+              Transaction <code>{metadata.transactionHash}</code>
+            </span>
+          )}
+          {typeof metadata.transactionLink === "string" && (
+            <a href={metadata.transactionLink} target="_blank" rel="noreferrer">
+              View transaction
+            </a>
+          )}
+          {(typeof metadata.healthFactorBefore === "string" ||
+            typeof metadata.healthFactorAfter === "string") && (
+            <span>
+              Health factor {String(metadata.healthFactorBefore ?? "—")} →{" "}
+              {String(metadata.healthFactorAfter ?? "—")}
+            </span>
+          )}
+          <span>
+            Receipt {metadata.receiptVerified === true ? "verified" : "pending"} · Aave{" "}
+            {metadata.aaveVerified === true ? "verified" : "pending"}
+          </span>
+        </div>
+        <details className="notification-update-group" open>
+          <summary>View execution timeline</summary>
+          <div>
+            {[...item.notices]
+              .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+              .map((notice) => (
+                <NotificationRow
+                  notice={notice}
+                  pendingId={pendingId}
+                  mark={mark}
+                  compact
+                  key={notice.id}
+                />
+              ))}
+          </div>
+        </details>
+      </div>
+    </article>
   );
 }
 
@@ -276,8 +401,7 @@ function NotificationRow({
         <h3>{notice.title}</h3>
         <p>{notice.message}</p>
         <small>
-          {new Date(notice.createdAt).toLocaleString()} · Delivery{" "}
-          {notice.webhookStatus.toLowerCase()}
+          {new Date(notice.createdAt).toLocaleString()} · {deliveryStatusCopy(notice.webhookStatus)}
         </small>
       </div>
       {!notice.readAt && (

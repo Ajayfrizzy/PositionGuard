@@ -9,22 +9,71 @@ import type { Prisma } from "../../generated/prisma/client";
 export function stableExecutionKey(prepared: CanonicalPreparation) {
   return `pg_${createHash("sha256").update([prepared.walletAddress.toLowerCase(), prepared.chainId, prepared.policyId, prepared.policyUpdatedAt, prepared.intent.action, prepared.intent.asset.toLowerCase(), prepared.intent.amountUnits, prepared.effectFingerprint].join("|")).digest("hex")}`;
 }
+export function staleInterventionKey(input: {
+  walletAddress: string;
+  chainId: number;
+  policyId: string;
+  policyUpdatedAt: string;
+  action: string;
+  asset: string;
+  canonicalIntentFingerprint: string;
+}) {
+  return createHash("sha256")
+    .update(
+      [
+        input.walletAddress.toLowerCase(),
+        input.chainId,
+        input.policyId,
+        input.policyUpdatedAt,
+        input.action,
+        input.asset.toLowerCase(),
+        input.canonicalIntentFingerprint,
+      ].join("|"),
+    )
+    .digest("hex");
+}
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 export async function persistStaleDecision(
   prepared: CanonicalPreparation,
   refreshed: CanonicalPreparation | null,
+  db = getPrisma(),
 ) {
-  const db = getPrisma();
   const user = await db.user.findUniqueOrThrow({
     where: { walletAddress: prepared.walletAddress.toLowerCase() },
   });
+  const staleIdentity = staleInterventionKey({
+    walletAddress: prepared.walletAddress,
+    chainId: prepared.chainId,
+    policyId: prepared.policyId,
+    policyUpdatedAt: prepared.policyUpdatedAt,
+    action: prepared.intent.action,
+    asset: prepared.candidate.assetSymbol ?? prepared.intent.asset,
+    canonicalIntentFingerprint: prepared.effectFingerprint,
+  });
+  const existing = await db.auditEvent.findFirst({
+    where: {
+      userId: user.id,
+      type: "POSITION_CHANGED",
+      metadata: { path: ["staleIdentity"], equals: staleIdentity },
+    },
+    select: { id: true },
+  });
+  if (existing) return;
   await db.auditEvent.create({
     data: {
       userId: user.id,
       type: "POSITION_CHANGED",
-      severity: "WARNING",
-      message: "Aave position changed after simulation; the stale intervention was cancelled.",
+      severity: "INFO",
+      message:
+        "Protection attempt cancelled because the live position no longer required that intervention.",
       metadata: {
+        outcome: "STALE_INTERVENTION_CANCELLED",
+        staleIdentity,
+        policyId: prepared.policyId,
+        policyUpdatedAt: prepared.policyUpdatedAt,
+        action: prepared.intent.action,
+        asset: prepared.intent.asset,
+        canonicalIntentFingerprint: prepared.effectFingerprint,
         preparedFingerprint: prepared.effectFingerprint,
         refreshedFingerprint: refreshed?.effectFingerprint ?? null,
         preparedAmount: prepared.intent.amountUnits,

@@ -210,6 +210,8 @@ export function ExecutionPanel({
           body.error?.message ?? "PositionGuard could not complete the protection simulation.",
         );
       }
+      if (!body.simulation)
+        throw new Error("The live position changed before simulation could start.");
       setLive(body);
       setMessage(
         `Simulation passed. ${body.amount} ${body.asset} would reach projected HF ${body.projectedHealthFactor ?? "unbounded"}. Gas estimate: ${body.simulation.gasEstimate}.`,

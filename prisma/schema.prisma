@@ -56,6 +56,7 @@ enum NotificationType {
   EXECUTION_STARTED
   EXECUTION_CONFIRMED
   EXECUTION_FAILED
+  MONITORING_FAILED
   POSITION_CHANGED
 }
 
@@ -88,68 +89,68 @@ enum Severity {
 }
 
 model User {
-  id            String               @id @default(cuid())
-  walletAddress String               @unique @db.VarChar(42)
-  createdAt     DateTime             @default(now())
-  policies      ProtectionPolicy[]
-  snapshots     PositionSnapshot[]
-  decisions     ProtectionDecision[]
-  auditEvents   AuditEvent[]
-  notifications Notification[]
-  monitoringRuns MonitoringRun[]
+  id               String               @id @default(cuid())
+  walletAddress    String               @unique @db.VarChar(42)
+  createdAt        DateTime             @default(now())
+  policies         ProtectionPolicy[]
+  snapshots        PositionSnapshot[]
+  decisions        ProtectionDecision[]
+  auditEvents      AuditEvent[]
+  notifications    Notification[]
+  monitoringRuns   MonitoringRun[]
   walletChallenges WalletChallenge[]
-  sessions        UserSession[]
+  sessions         UserSession[]
 }
 
 model WalletChallenge {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   userId        String?
-  user          User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  walletAddress String   @db.VarChar(42)
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress String    @db.VarChar(42)
   chainId       Int
-  nonceHash     String   @unique @db.VarChar(64)
-  message       String   @db.VarChar(1000)
+  nonceHash     String    @unique @db.VarChar(64)
+  message       String    @db.VarChar(1000)
   expiresAt     DateTime
   consumedAt    DateTime?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime  @default(now())
 
   @@index([walletAddress, chainId, createdAt])
 }
 
 model UserSession {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   userId             String
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  walletAddress      String   @db.VarChar(42)
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletAddress      String    @db.VarChar(42)
   chainId            Int
   protectedAccountId String
-  tokenHash          String   @unique @db.VarChar(64)
+  tokenHash          String    @unique @db.VarChar(64)
   expiresAt          DateTime
   revokedAt          DateTime?
-  createdAt          DateTime @default(now())
-  lastSeenAt         DateTime @default(now())
+  createdAt          DateTime  @default(now())
+  lastSeenAt         DateTime  @default(now())
 
   @@index([userId, expiresAt])
 }
 
 model ProtectionPolicy {
-  id                          String   @id @default(cuid())
+  id                          String              @id @default(cuid())
   userId                      String
-  user                        User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user                        User                @relation(fields: [userId], references: [id], onDelete: Restrict)
   chainId                     Int
-  targetHealthFactor          Decimal  @db.Decimal(30, 6)
-  warningHealthFactor         Decimal  @db.Decimal(30, 6)
-  emergencyHealthFactor       Decimal  @db.Decimal(30, 6)
-  maxAutonomousAmountUsd      Decimal  @db.Decimal(30, 6)
-  maxDailyAutonomousAmountUsd Decimal  @db.Decimal(30, 6)
-  approvalRequiredAboveUsd    Decimal  @db.Decimal(30, 6)
+  targetHealthFactor          Decimal             @db.Decimal(30, 6)
+  warningHealthFactor         Decimal             @db.Decimal(30, 6)
+  emergencyHealthFactor       Decimal             @db.Decimal(30, 6)
+  maxAutonomousAmountUsd      Decimal             @db.Decimal(30, 6)
+  maxDailyAutonomousAmountUsd Decimal             @db.Decimal(30, 6)
+  approvalRequiredAboveUsd    Decimal             @db.Decimal(30, 6)
   allowRepay                  Boolean
   allowAddCollateral          Boolean
   interventionCooldownMinutes Int
-  enabled                     Boolean  @default(false)
+  enabled                     Boolean             @default(false)
   executionMode               PolicyExecutionMode @default(REQUIRE_APPROVAL)
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
+  createdAt                   DateTime            @default(now())
+  updatedAt                   DateTime            @updatedAt
 
   @@unique([userId, chainId])
 }
@@ -175,26 +176,26 @@ model PositionSnapshot {
 }
 
 model ProtectionDecision {
-  id                   String            @id @default(cuid())
-  userId               String
-  user                 User              @relation(fields: [userId], references: [id], onDelete: Restrict)
-  snapshotId           String
-  snapshot             PositionSnapshot  @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
-  riskLevel            RiskLevel
-  selectedAction       ActionType
-  selectedAsset        String?
-  selectedAmount       Decimal?          @db.Decimal(78, 18)
-  expectedHealthFactor Decimal?          @db.Decimal(78, 18)
-  reasoning            String
-  reasoningContext     Json
-  policyContext        Json
-  status               DecisionStatus
-  blockerReason        String?
-  fundingReadiness     FundingReadinessStatus?
+  id                      String                  @id @default(cuid())
+  userId                  String
+  user                    User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  snapshotId              String
+  snapshot                PositionSnapshot        @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  riskLevel               RiskLevel
+  selectedAction          ActionType
+  selectedAsset           String?
+  selectedAmount          Decimal?                @db.Decimal(78, 18)
+  expectedHealthFactor    Decimal?                @db.Decimal(78, 18)
+  reasoning               String
+  reasoningContext        Json
+  policyContext           Json
+  status                  DecisionStatus
+  blockerReason           String?
+  fundingReadiness        FundingReadinessStatus?
   fundingReadinessContext Json?
-  createdAt            DateTime          @default(now())
-  candidates           CandidateAction[]
-  executions           Execution[]
+  createdAt               DateTime                @default(now())
+  candidates              CandidateAction[]
+  executions              Execution[]
 
   @@index([userId, createdAt])
 }
@@ -255,35 +256,35 @@ model AuditEvent {
 }
 
 model Notification {
-  id             String                     @id @default(cuid())
-  userId         String
-  user           User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
-  type           NotificationType
-  title          String
-  message        String
-  dedupeKey      String                     @unique
-  metadata       Json
-  readAt         DateTime?
-  webhookStatus  NotificationDeliveryStatus @default(PENDING)
-  webhookAttempts Int                       @default(0)
+  id               String                     @id @default(cuid())
+  userId           String
+  user             User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type             NotificationType
+  title            String
+  message          String
+  dedupeKey        String                     @unique
+  metadata         Json
+  readAt           DateTime?
+  webhookStatus    NotificationDeliveryStatus @default(PENDING)
+  webhookAttempts  Int                        @default(0)
   webhookLastError String?
-  createdAt      DateTime                   @default(now())
+  createdAt        DateTime                   @default(now())
 
   @@index([userId, createdAt])
 }
 
 model MonitoringRun {
-  id                 String   @id @default(cuid())
-  userId             String
-  user               User     @relation(fields: [userId], references: [id], onDelete: Restrict)
-  chainId            Int
-  startedAt          DateTime @default(now())
-  completedAt        DateTime?
-  status             String
-  snapshotId         String?
-  decisionId         String?
-  executionOutcome   String?
-  errorCode          String?
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chainId          Int
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  status           String
+  snapshotId       String?
+  decisionId       String?
+  executionOutcome String?
+  errorCode        String?
 
   @@index([userId, chainId, startedAt])
 }

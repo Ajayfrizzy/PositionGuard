@@ -1,5 +1,5 @@
 import "server-only";
-import { getDefaultChain } from "../chains/config";
+import { getChain, getDefaultChain } from "../chains/config";
 import { getPrisma } from "../db/prisma";
 import { prepareLiveProtectionAnalysis } from "../protection/live-preparation";
 import { persistPositionSnapshot } from "../aave/snapshots";
@@ -21,6 +21,15 @@ import {
 import type { ProtectionExecutionResult } from "../execution/types";
 import type { Prisma } from "../../generated/prisma/client";
 import { executionDisposition } from "../policies/execution-mode";
+import { staleInterventionKey } from "../execution/persist";
+import { logAutonomousEvent, safeWallet } from "./observability";
+import {
+  aaveIntentFingerprint,
+  buildAaveRepayIntent,
+  buildAaveSupplyIntent,
+} from "../aave/intents";
+import { assetSymbolSchema } from "../chains/assets";
+import type { CandidateAction } from "../protection/types";
 type PreparedMonitoring = Awaited<ReturnType<typeof prepareLiveProtectionAnalysis>>;
 export interface MonitoringDependencies {
   prepare: typeof prepareLiveProtectionAnalysis;
@@ -157,6 +166,9 @@ export interface AutonomousMonitoringDependencies {
     walletAddress: string;
     chainId: number;
     candidateId?: string;
+    onCanonicalReady?: (
+      prepared: import("../execution/types").CanonicalPreparation,
+    ) => Promise<void>;
   }): Promise<ProtectionExecutionResult>;
 }
 const autonomousDefaults: AutonomousMonitoringDependencies = {
@@ -176,6 +188,25 @@ const blockerFor = (state: string | null) =>
     KEEPERHUB_UNAVAILABLE: "KEEPERHUB_UNAVAILABLE",
     UNSUPPORTED_ASSET: "UNSUPPORTED_ASSET",
   })[state ?? ""] ?? "POLICY_REJECTED";
+function candidateIntentFingerprint(target: ProtectedAccountTarget, candidate: CandidateAction) {
+  const sender = process.env.KEEPERHUB_EXECUTION_WALLET;
+  if (!sender || !candidate.tokenAmount || !candidate.assetSymbol)
+    return actionNotificationIdentity({
+      type: candidate.type,
+      asset: candidate.assetSymbol ?? candidate.asset,
+      amount: candidate.tokenAmount ?? candidate.amount,
+    });
+  const input = {
+    chainId: target.chainId,
+    assetSymbol: assetSymbolSchema.parse(candidate.assetSymbol),
+    amount: candidate.tokenAmount,
+    beneficiary: target.walletAddress,
+    sender,
+  };
+  return aaveIntentFingerprint(
+    candidate.type === "REPAY_DEBT" ? buildAaveRepayIntent(input) : buildAaveSupplyIntent(input),
+  );
+}
 async function safeNotify(event: Parameters<typeof notify>[0]) {
   try {
     await notify(event);
@@ -303,6 +334,17 @@ export async function runProtectedAccountCycle(
     let readiness: FundingReadiness | null = null,
       execution: ProtectionExecutionResult | null = null,
       blockerReason: string | null = null;
+    if (target.executionMode === "AUTONOMOUS")
+      logAutonomousEvent("autonomous-evaluation", {
+        wallet: safeWallet(target.walletAddress),
+        chainId: target.chainId,
+        decisionId: persisted.decisionId,
+        riskLevel: result.riskLevel,
+        status: result.status,
+        action: result.selectedCandidate?.type ?? result.action,
+        asset: result.selectedCandidate?.assetSymbol ?? result.selectedCandidate?.asset ?? null,
+        amount: result.selectedCandidate?.tokenAmount ?? result.selectedCandidate?.amount ?? null,
+      });
     if (shouldNotifyRecovery(previousState, result.riskLevel)) {
       await safeNotify({
         userId: target.protectedAccountId,
@@ -371,8 +413,20 @@ export async function runProtectedAccountCycle(
         actionable: Boolean(selected.candidate),
         ready: readiness?.state === "READY",
       });
-      if (disposition === "BLOCK") blockerReason = blockerFor(readiness?.state ?? null);
-      else if (disposition === "SIMULATE" && selected.candidate) {
+      if (disposition === "BLOCK") {
+        blockerReason = blockerFor(readiness?.state ?? null);
+        if (target.executionMode === "AUTONOMOUS")
+          logAutonomousEvent("autonomous-skipped", {
+            wallet: safeWallet(target.walletAddress),
+            chainId: target.chainId,
+            decisionId: persisted.decisionId,
+            action: result.selectedCandidate?.type ?? result.action,
+            asset: result.selectedCandidate?.assetSymbol ?? result.selectedCandidate?.asset ?? null,
+            amount:
+              result.selectedCandidate?.tokenAmount ?? result.selectedCandidate?.amount ?? null,
+            reason: blockerReason,
+          });
+      } else if (disposition === "SIMULATE" && selected.candidate) {
         execution = await dependencies.simulate({
           mode: "simulate",
           walletAddress: target.walletAddress,
@@ -403,18 +457,29 @@ export async function runProtectedAccountCycle(
             },
           });
       } else if (disposition === "EXECUTE" && selected.candidate) {
-        await safeNotify({
-          userId: target.protectedAccountId,
-          type: "EXECUTION_STARTED",
-          title: "Autonomous protection started",
-          message: "All preflight readiness checks passed.",
-          dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${run.id}:${selected.candidate.id}:started`,
-        });
         try {
           execution = await dependencies.execute({
             walletAddress: target.walletAddress,
             chainId: target.chainId,
             candidateId: selected.candidate.id,
+            onCanonicalReady: async (canonical) => {
+              await notify({
+                userId: target.protectedAccountId,
+                type: "EXECUTION_STARTED",
+                title: "Autonomous protection started",
+                message: "Canonical live revalidation passed; preflight execution checks started.",
+                dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${canonical.effectFingerprint}:started`,
+                metadata: {
+                  decisionId: persisted.decisionId,
+                  action: canonical.intent.action,
+                  asset: canonical.candidate.assetSymbol ?? canonical.intent.asset,
+                  amount: canonical.candidate.tokenAmount,
+                  canonicalIntentFingerprint: canonical.effectFingerprint,
+                  healthFactorBefore: canonical.position.account.healthFactor,
+                  projectedHealthFactor: canonical.candidate.expectedHealthFactor,
+                },
+              });
+            },
           });
           if (execution.outcome === "CONFIRMED")
             await safeNotify({
@@ -423,19 +488,166 @@ export async function runProtectedAccountCycle(
               title: "Protection confirmed",
               message: "The Aave intervention and post-state were verified.",
               dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${execution.idempotencyKey ?? selected.candidate.id}:confirmed`,
-              metadata: { transactionHash: execution.transactionHash },
+              metadata: {
+                decisionId: persisted.decisionId,
+                executionId: execution.executionId,
+                transactionHash: execution.transactionHash,
+                transactionLink: execution.transactionHash
+                  ? `${getChain(target.chainId).blockExplorerBaseUrl}/tx/${execution.transactionHash}`
+                  : null,
+                action: execution.selectedAction,
+                asset: execution.asset,
+                amount: execution.amount,
+                canonicalIntentFingerprint: execution.effectFingerprint,
+                receiptVerified: true,
+                aaveVerified: true,
+                healthFactorBefore: execution.currentHealthFactor,
+                healthFactorAfter: execution.healthFactorAfter,
+              },
             });
-          else if (execution.outcome === "POSITION_CHANGED") blockerReason = "STALE_POSITION";
+          else if (execution.outcome === "POSITION_CHANGED") {
+            const staleIdentity = staleInterventionKey({
+              walletAddress: target.walletAddress,
+              chainId: target.chainId,
+              policyId: prepared.policyId,
+              policyUpdatedAt: prepared.policyUpdatedAt,
+              action: selected.candidate.type,
+              asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+              canonicalIntentFingerprint:
+                execution.effectFingerprint ??
+                candidateIntentFingerprint(target, selected.candidate),
+            });
+            await safeNotify({
+              userId: target.protectedAccountId,
+              type: "POSITION_CHANGED",
+              title: "Stale protection attempt cancelled",
+              message:
+                "Protection attempt cancelled because the live position no longer required that intervention.",
+              dedupeKey: `${target.protectedAccountId}:${target.chainId}:stale:${staleIdentity}`,
+              metadata: {
+                outcome: "STALE_INTERVENTION_CANCELLED",
+                staleIdentity,
+                decisionId: persisted.decisionId,
+                canonicalIntentFingerprint: execution.effectFingerprint,
+                action: selected.candidate.type,
+                asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+              },
+            });
+          }
         } catch (error) {
           const code = error instanceof Error ? error.message : "EXECUTION_FAILED";
-          blockerReason = code.includes("SIMULATION") ? "SIMULATION_FAILED" : code;
-          await safeNotify({
-            userId: target.protectedAccountId,
-            type: "EXECUTION_FAILED",
-            title: "Protection execution failed",
-            message: blockerReason,
-            dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${run.id}:${selected.candidate.id}:failed:${blockerReason}`,
-          });
+          if (code === "NO_CANONICAL_INTERVENTION_READY") {
+            const fingerprint = candidateIntentFingerprint(target, selected.candidate);
+            const staleIdentity = staleInterventionKey({
+              walletAddress: target.walletAddress,
+              chainId: target.chainId,
+              policyId: prepared.policyId,
+              policyUpdatedAt: prepared.policyUpdatedAt,
+              action: selected.candidate.type,
+              asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+              canonicalIntentFingerprint: fingerprint,
+            });
+            const existing = await db.auditEvent.findFirst({
+              where: {
+                userId: target.protectedAccountId,
+                type: "POSITION_CHANGED",
+                metadata: { path: ["staleIdentity"], equals: staleIdentity },
+              },
+              select: { id: true },
+            });
+            if (!existing)
+              await db.auditEvent.create({
+                data: {
+                  userId: target.protectedAccountId,
+                  type: "POSITION_CHANGED",
+                  severity: "INFO",
+                  message:
+                    "Protection attempt cancelled because the live position no longer required that intervention.",
+                  metadata: {
+                    outcome: "STALE_INTERVENTION_CANCELLED",
+                    staleIdentity,
+                    policyId: prepared.policyId,
+                    policyUpdatedAt: prepared.policyUpdatedAt,
+                    action: selected.candidate.type,
+                    asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+                    canonicalIntentFingerprint: fingerprint,
+                  },
+                },
+              });
+            await safeNotify({
+              userId: target.protectedAccountId,
+              type: "POSITION_CHANGED",
+              title: "Stale protection attempt cancelled",
+              message:
+                "Protection attempt cancelled because the live position no longer required that intervention.",
+              dedupeKey: `${target.protectedAccountId}:${target.chainId}:stale:${staleIdentity}`,
+              metadata: {
+                outcome: "STALE_INTERVENTION_CANCELLED",
+                staleIdentity,
+                decisionId: persisted.decisionId,
+                canonicalIntentFingerprint: fingerprint,
+                action: selected.candidate.type,
+                asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+              },
+            });
+            execution = {
+              outcome: "POSITION_CHANGED",
+              stage: "REVALIDATING",
+              stages: [
+                "REFRESHING_POSITION",
+                "VALIDATING_POLICY",
+                "CALCULATING_MEI",
+                "REVALIDATING",
+              ],
+              currentHealthFactor: prepared.position.account.healthFactor,
+              selectedAction: selected.candidate.type,
+              amount: selected.candidate.tokenAmount ?? selected.candidate.amount,
+              asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+              projectedHealthFactor: selected.candidate.expectedHealthFactor,
+              simulation: null,
+              checks: null,
+              effectFingerprint: fingerprint,
+            };
+            logAutonomousEvent("autonomous-revalidation", {
+              wallet: safeWallet(target.walletAddress),
+              chainId: target.chainId,
+              decisionId: persisted.decisionId,
+              action: selected.candidate.type,
+              asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+              amount: selected.candidate.tokenAmount ?? selected.candidate.amount,
+              canonicalIntentFingerprint: fingerprint,
+              unchanged: false,
+              reason: "NO_CANONICAL_INTERVENTION_READY",
+            });
+            logAutonomousEvent("autonomous-skipped", {
+              wallet: safeWallet(target.walletAddress),
+              chainId: target.chainId,
+              decisionId: persisted.decisionId,
+              action: selected.candidate.type,
+              asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+              amount: selected.candidate.tokenAmount ?? selected.candidate.amount,
+              reason: "STALE_INTERVENTION_CANCELLED",
+            });
+          } else {
+            blockerReason = code.includes("SIMULATION") ? "SIMULATION_FAILED" : code;
+            logAutonomousEvent("autonomous-failed", {
+              wallet: safeWallet(target.walletAddress),
+              chainId: target.chainId,
+              decisionId: persisted.decisionId,
+              action: selected.candidate.type,
+              asset: selected.candidate.assetSymbol ?? selected.candidate.asset,
+              amount: selected.candidate.tokenAmount ?? selected.candidate.amount,
+              reason: blockerReason,
+            });
+            await safeNotify({
+              userId: target.protectedAccountId,
+              type: "EXECUTION_FAILED",
+              title: "Protection execution failed",
+              message: blockerReason,
+              dedupeKey: `${target.protectedAccountId}:${target.chainId}:execution:${run.id}:${selected.candidate.id}:failed:${blockerReason}`,
+              metadata: { decisionId: persisted.decisionId, reason: blockerReason },
+            });
+          }
         }
       }
     }
@@ -522,6 +734,14 @@ export async function runProtectedAccountCycle(
         message: "Monitoring cycle failed safely.",
         metadata: { code },
       },
+    });
+    await safeNotify({
+      userId: target.protectedAccountId,
+      type: "MONITORING_FAILED",
+      title: "Monitoring cycle failed",
+      message: "The position was not evaluated successfully during this monitoring cycle.",
+      dedupeKey: `${target.protectedAccountId}:${target.chainId}:monitoring:${run.id}:failed:${code}`,
+      metadata: { code, monitoringRunId: run.id },
     });
     throw error;
   }

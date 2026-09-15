@@ -10,7 +10,11 @@ import {
 import { notify, type NotificationStore } from "../../src/lib/notifications/service";
 import { filterAuditTimeline, mapAuditTimeline } from "../../src/lib/product/audit";
 import {
+  buildNotificationItems,
   buildMeaningfulNotifications,
+  deliveryStatusCopy,
+  filterNotifications,
+  notificationFilterCount,
   type NotificationRecord,
 } from "../../src/lib/notifications/presentation";
 
@@ -176,9 +180,10 @@ describe("notification refresh contract", () => {
     expect(route).not.toContain("take: 100");
   });
 
-  it("ties separate execution attempts to separate monitoring run identities", () => {
+  it("starts only after canonical readiness and keeps real failures attempt-scoped", () => {
     const monitoring = source("src/lib/monitoring/service.ts");
-    expect(monitoring).toContain(":execution:${run.id}:${selected.candidate.id}:started");
+    expect(monitoring).toContain("onCanonicalReady: async (canonical)");
+    expect(monitoring).toContain(":execution:${canonical.effectFingerprint}:started");
     expect(monitoring).toContain(
       ":execution:${run.id}:${selected.candidate.id}:failed:${blockerReason}",
     );
@@ -233,10 +238,67 @@ describe("historical notification presentation", () => {
   });
 
   it("renders every underlying row without grouping in All notifications", () => {
-    const component = source("src/components/notification-center.tsx");
-    expect(component).toContain('view === "all"');
-    expect(component).toContain("notices.map((notice)");
-    expect(component).toContain("All notifications");
+    const rows = [
+      notice("one", "MEI_SELECTED", "2026-09-14T01:00:00Z", "REPAY_DEBT:usdc:1"),
+      notice("two", "MEI_SELECTED", "2026-09-14T02:00:00Z", "REPAY_DEBT:usdc:1"),
+    ];
+    expect(buildNotificationItems(rows, { meaningful: false, filter: "all" })).toHaveLength(2);
+  });
+
+  it("classifies Risk, Recommendations, Executions, Failures, and System independently", () => {
+    const rows = [
+      notice("risk", "RISK_HIGH", "2026-09-14T01:00:00Z"),
+      notice("recommendation", "MEI_SELECTED", "2026-09-14T02:00:00Z", "REPAY_DEBT:usdc:1"),
+      notice("execution", "EXECUTION_CONFIRMED", "2026-09-14T03:00:00Z"),
+      notice("failure", "EXECUTION_FAILED", "2026-09-14T04:00:00Z"),
+      {
+        ...notice("system", "POSITION_CHANGED", "2026-09-14T05:00:00Z"),
+        metadata: { outcome: "STALE_INTERVENTION_CANCELLED" },
+      },
+    ];
+    expect(filterNotifications(rows, "risk").map((row) => row.id)).toEqual(["risk"]);
+    expect(filterNotifications(rows, "recommendations").map((row) => row.id)).toEqual([
+      "recommendation",
+    ]);
+    expect(filterNotifications(rows, "executions").map((row) => row.id)).toEqual(["execution"]);
+    expect(filterNotifications(rows, "failures").map((row) => row.id)).toEqual(["failure"]);
+    expect(filterNotifications(rows, "system").map((row) => row.id)).toEqual(["system"]);
+  });
+
+  it("groups one execution timeline without grouping distinct confirmed executions", () => {
+    const started = notice("started", "EXECUTION_STARTED", "2026-09-14T01:00:00Z");
+    const confirmed = notice("confirmed", "EXECUTION_CONFIRMED", "2026-09-14T02:00:00Z");
+    const other = notice("other", "EXECUTION_CONFIRMED", "2026-09-14T03:00:00Z");
+    started.metadata = { canonicalIntentFingerprint: "intent-1" };
+    confirmed.metadata = { canonicalIntentFingerprint: "intent-1", receiptVerified: true };
+    other.metadata = { canonicalIntentFingerprint: "intent-2", receiptVerified: true };
+    const items = buildNotificationItems([other, confirmed, started], {
+      meaningful: true,
+      filter: "executions",
+    });
+    expect(items).toHaveLength(2);
+    expect(
+      items.find((item) => item.kind !== "notification" && item.id === "execution:intent-1"),
+    ).toMatchObject({
+      kind: "execution-group",
+      notices: expect.arrayContaining([
+        expect.objectContaining({ id: "started" }),
+        expect.objectContaining({ id: "confirmed" }),
+      ]),
+    });
+    expect(notificationFilterCount([other, confirmed, started], "executions")).toBe(2);
+  });
+
+  it("treats webhook delivery failure separately from the protection outcome", () => {
+    const confirmed = {
+      ...notice("confirmed", "EXECUTION_CONFIRMED", "2026-09-14T01:00:00Z"),
+      webhookStatus: "FAILED",
+    };
+    expect(filterNotifications([confirmed], "executions")).toHaveLength(1);
+    expect(filterNotifications([confirmed], "failures")).toHaveLength(1);
+    expect(deliveryStatusCopy("FAILED")).toBe(
+      "In-app notification recorded · Webhook delivery failed",
+    );
   });
 });
 

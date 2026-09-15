@@ -55,12 +55,14 @@ export interface ProtectionExecutionResult {
   amount: string;
   asset: string;
   projectedHealthFactor: string | null;
-  simulation: { success: true; wouldRevert: false; gasEstimate: string };
-  checks: SafetyChecks;
+  simulation: { success: true; wouldRevert: false; gasEstimate: string } | null;
+  checks: SafetyChecks | null;
   refreshed?: { healthFactor: string | null; action: string | null; amount: string | null };
   executionId?: string;
   transactionHash?: string;
   idempotencyKey?: string;
+  effectFingerprint?: string;
+  healthFactorAfter?: string | null;
 }
 export class ProtectionExecutionError extends Error {
   constructor(

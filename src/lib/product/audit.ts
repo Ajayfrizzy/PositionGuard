@@ -1,4 +1,5 @@
 import type { AuditView, ExecutionView } from "./models";
+import { classifyProtectionEvent } from "../notifications/classification";
 export interface TimelineEvent {
   id: string;
   type: string;
@@ -21,7 +22,10 @@ export function filterAuditTimeline(events: TimelineEvent[], filter: ActivityFil
   if (filter === "monitoring") return [];
   if (filter === "executions")
     return events.filter(
-      (event) => Boolean(event.execution) || /EXECUTION|SIMULATION/.test(event.type),
+      (event) =>
+        Boolean(event.execution) ||
+        classifyProtectionEvent({ type: event.type }) === "executions" ||
+        /SIMULATION/.test(event.type),
     );
   if (filter === "warnings")
     return events.filter((event) => event.tone === "warn" || event.tone === "danger");

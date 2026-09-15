@@ -192,6 +192,40 @@
   background: rgba(99, 167, 255, 0.08);
   color: #c6d9ec;
 }
+.notification-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.notification-filters button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: #8496aa;
+  cursor: pointer;
+  padding: 0.45rem 0.75rem;
+}
+.notification-filters button:hover,
+.notification-filters button:focus-visible,
+.notification-filters button.active {
+  border-color: var(--blue);
+  color: #c6d9ec;
+  background: rgba(99, 167, 255, 0.08);
+}
+.notification-filter-count {
+  color: #8496aa;
+  margin: 0 0 0.75rem;
+  text-transform: capitalize;
+}
+.execution-notification-proof {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+.execution-notification-proof code {
+  overflow-wrap: anywhere;
+}
 .notification-list article {
   display: grid;
   grid-template-columns: 8px 1fr auto;

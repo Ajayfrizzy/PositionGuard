@@ -6,7 +6,11 @@ import {
   executeProtection,
   type OrchestratorDependencies,
 } from "../../src/lib/execution/orchestrator";
-import { stableExecutionKey } from "../../src/lib/execution/persist";
+import {
+  persistStaleDecision,
+  stableExecutionKey,
+  staleInterventionKey,
+} from "../../src/lib/execution/persist";
 import { requireSuccessfulKeeperHubReceipt } from "../../src/lib/keeperhub/direct-client";
 import { runMonitoringCycle } from "../../src/lib/monitoring/service";
 import type { CanonicalPreparation } from "../../src/lib/execution/types";
@@ -227,13 +231,42 @@ describe("controlled execution orchestration", () => {
     expect(deps.keeperHub.broadcast).not.toHaveBeenCalled();
   });
   it("stale state records cancellation and never broadcasts", async () => {
+    const onCanonicalReady = vi.fn(async () => {});
     const deps = dependencies({
       revalidate: vi.fn(async () => ({ unchanged: false, refreshed: null })),
     });
-    const result = await executeProtection({ mode: "broadcast" }, deps);
+    const result = await executeProtection({ mode: "broadcast", onCanonicalReady }, deps);
     expect(result.outcome).toBe("POSITION_CHANGED");
+    expect(result.simulation).toBeNull();
     expect(deps.persistStale).toHaveBeenCalledOnce();
+    expect(onCanonicalReady).not.toHaveBeenCalled();
+    expect(deps.verifySender).not.toHaveBeenCalled();
+    expect(deps.keeperHub.simulate).not.toHaveBeenCalled();
     expect(deps.keeperHub.broadcast).not.toHaveBeenCalled();
+  });
+  it("starts only after live canonical revalidation and later actionable state executes normally", async () => {
+    const sequence: string[] = [];
+    const deps = dependencies({
+      revalidate: vi.fn(async () => {
+        sequence.push("revalidated");
+        return { unchanged: true, refreshed: prepared };
+      }),
+    });
+    const simulate = deps.keeperHub.simulate;
+    deps.keeperHub.simulate = vi.fn(async (simulationIntent) => {
+      sequence.push("simulated");
+      return simulate(simulationIntent);
+    }) as never;
+    const onCanonicalReady = vi.fn(async () => {
+      sequence.push("started");
+    });
+    const result = await executeAutonomousProtection(
+      { walletAddress: beneficiary, chainId: 84532, onCanonicalReady },
+      deps,
+    );
+    expect(result.outcome).toBe("CONFIRMED");
+    expect(sequence.slice(0, 3)).toEqual(["revalidated", "started", "simulated"]);
+    expect(deps.keeperHub.broadcast).toHaveBeenCalledOnce();
   });
   it("sender mismatch blocks before funding or simulation", async () => {
     const deps = dependencies({
@@ -293,6 +326,46 @@ describe("controlled execution orchestration", () => {
     expect(stableExecutionKey(prepared)).toBe(stableExecutionKey({ ...prepared }));
     expect(stableExecutionKey({ ...prepared, policyId: "other" })).not.toBe(
       stableExecutionKey(prepared),
+    );
+  });
+  it("uses a stable stale-cancellation identity and changes it for a material action", () => {
+    const input = {
+      walletAddress: prepared.walletAddress,
+      chainId: prepared.chainId,
+      policyId: prepared.policyId,
+      policyUpdatedAt: prepared.policyUpdatedAt,
+      action: prepared.intent.action,
+      asset: prepared.intent.asset,
+      canonicalIntentFingerprint: prepared.effectFingerprint,
+    };
+    expect(staleInterventionKey(input)).toBe(staleInterventionKey({ ...input }));
+    expect(staleInterventionKey({ ...input, action: "ADD_COLLATERAL" })).not.toBe(
+      staleInterventionKey(input),
+    );
+  });
+  it("persists one safe cancellation for repeated identical stale revalidation", async () => {
+    let persisted = false;
+    const create = vi.fn(async () => {
+      persisted = true;
+      return { id: "audit-1" };
+    });
+    const db = {
+      user: { findUniqueOrThrow: vi.fn(async () => ({ id: "user-1" })) },
+      auditEvent: {
+        findFirst: vi.fn(async () => (persisted ? { id: "audit-1" } : null)),
+        create,
+      },
+    };
+    await persistStaleDecision(prepared, null, db as never);
+    await persistStaleDecision(prepared, null, db as never);
+    expect(create).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          severity: "INFO",
+          metadata: expect.objectContaining({ outcome: "STALE_INTERVENTION_CANCELLED" }),
+        }),
+      }),
     );
   });
   it("prevents duplicate execution without another broadcast", async () => {

@@ -13,6 +13,7 @@ export const notificationTypes = [
   "EXECUTION_STARTED",
   "EXECUTION_CONFIRMED",
   "EXECUTION_FAILED",
+  "MONITORING_FAILED",
   "POSITION_CHANGED",
 ] as const;
 export type NotificationEventType = (typeof notificationTypes)[number];
