@@ -12,9 +12,12 @@ import { filterAuditTimeline, mapAuditTimeline } from "../../src/lib/product/aud
 import {
   buildNotificationItems,
   buildMeaningfulNotifications,
-  deliveryStatusCopy,
   filterNotifications,
+  NOTIFICATION_PAGE_SIZE,
+  notificationDeliveryPresentation,
+  notificationEventTone,
   notificationFilterCount,
+  paginateNotificationItems,
   type NotificationRecord,
 } from "../../src/lib/notifications/presentation";
 
@@ -289,16 +292,166 @@ describe("historical notification presentation", () => {
     expect(notificationFilterCount([other, confirmed, started], "executions")).toBe(2);
   });
 
-  it("treats webhook delivery failure separately from the protection outcome", () => {
-    const confirmed = {
-      ...notice("confirmed", "EXECUTION_CONFIRMED", "2026-09-14T01:00:00Z"),
-      webhookStatus: "FAILED",
-    };
-    expect(filterNotifications([confirmed], "executions")).toHaveLength(1);
-    expect(filterNotifications([confirmed], "failures")).toHaveLength(1);
-    expect(deliveryStatusCopy("FAILED")).toBe(
-      "In-app notification recorded · Webhook delivery failed",
+  it("keeps event failures separate from webhook delivery attention", () => {
+    const withDelivery = (id: string, type: string, webhookStatus: string) => ({
+      ...notice(id, type, `2026-09-14T0${id.length}:00:00Z`),
+      webhookStatus,
+    });
+    const recommendationFailedDelivery = withDelivery("mei", "MEI_SELECTED", "FAILED");
+    const confirmedFailedDelivery = withDelivery("confirmed", "EXECUTION_CONFIRMED", "FAILED");
+    const executionFailedDelivered = withDelivery(
+      "failed-delivered",
+      "EXECUTION_FAILED",
+      "DELIVERED",
     );
+    const executionFailedDelivery = withDelivery("failed-webhook", "EXECUTION_FAILED", "FAILED");
+    const monitoringFailed = withDelivery("monitoring", "MONITORING_FAILED", "SKIPPED");
+    const riskFailedDelivery = withDelivery("risk", "RISK_WATCH", "FAILED");
+    const rows = [
+      recommendationFailedDelivery,
+      confirmedFailedDelivery,
+      executionFailedDelivered,
+      executionFailedDelivery,
+      monitoringFailed,
+      riskFailedDelivery,
+    ];
+
+    expect(filterNotifications([recommendationFailedDelivery], "recommendations")).toHaveLength(1);
+    expect(filterNotifications([recommendationFailedDelivery], "delivery")).toHaveLength(1);
+    expect(filterNotifications([recommendationFailedDelivery], "failures")).toHaveLength(0);
+    expect(filterNotifications([confirmedFailedDelivery], "executions")).toHaveLength(1);
+    expect(filterNotifications([confirmedFailedDelivery], "delivery")).toHaveLength(1);
+    expect(filterNotifications([confirmedFailedDelivery], "failures")).toHaveLength(0);
+    expect(filterNotifications([executionFailedDelivered], "failures")).toHaveLength(1);
+    expect(filterNotifications([executionFailedDelivered], "delivery")).toHaveLength(0);
+    expect(filterNotifications([executionFailedDelivery], "failures")).toHaveLength(1);
+    expect(filterNotifications([executionFailedDelivery], "delivery")).toHaveLength(1);
+    expect(filterNotifications([monitoringFailed], "failures")).toHaveLength(1);
+    expect(filterNotifications([riskFailedDelivery], "risk")).toHaveLength(1);
+    expect(filterNotifications([riskFailedDelivery], "delivery")).toHaveLength(1);
+    expect(filterNotifications([riskFailedDelivery], "failures")).toHaveLength(0);
+    expect(notificationFilterCount(rows, "failures")).toBe(3);
+    expect(notificationFilterCount(rows, "delivery")).toBe(4);
+    expect(notificationDeliveryPresentation("FAILED")).toEqual({
+      inApp: "RECORDED",
+      webhook: "FAILED",
+      tone: "warning",
+    });
+  });
+
+  it("includes pending webhook deliveries in Delivery without changing event category", () => {
+    const pending = {
+      ...notice("pending", "MEI_SELECTED", "2026-09-14T01:00:00Z"),
+      webhookStatus: "PENDING",
+    };
+    expect(filterNotifications([pending], "delivery")).toEqual([pending]);
+    expect(filterNotifications([pending], "recommendations")).toEqual([pending]);
+    expect(filterNotifications([pending], "failures")).toEqual([]);
+  });
+
+  it("paginates to 25 and loads 25 more while preserving the full semantic count", () => {
+    const rows = Array.from({ length: 61 }, (_, index) =>
+      notice(`failure-${index}`, "EXECUTION_FAILED", "2026-09-14T01:00:00Z"),
+    );
+    const items = buildNotificationItems(rows, { meaningful: true, filter: "failures" });
+    expect(NOTIFICATION_PAGE_SIZE).toBe(25);
+    expect(notificationFilterCount(rows, "failures")).toBe(61);
+    expect(paginateNotificationItems(items, 25)).toHaveLength(25);
+    expect(paginateNotificationItems(items, 50)).toHaveLength(50);
+    expect(paginateNotificationItems(items, 75)).toHaveLength(61);
+    const component = source("src/components/notification-center.tsx");
+    expect(component).toContain("const selectFilter = (value: NotificationFilter)");
+    expect(component).toContain('const selectView = (value: "meaningful" | "all")');
+    expect(component.match(/setVisibleCount\(NOTIFICATION_PAGE_SIZE\)/g)).toHaveLength(2);
+    expect(component).toContain("Load 25 more");
+  });
+});
+
+describe("notification delivery presentation", () => {
+  it("maps every webhook state to compact icon-and-text semantics", () => {
+    expect(notificationDeliveryPresentation("DELIVERED")).toMatchObject({
+      inApp: "RECORDED",
+      webhook: "DELIVERED",
+      tone: "success",
+    });
+    expect(notificationDeliveryPresentation("FAILED")).toMatchObject({
+      webhook: "FAILED",
+      tone: "warning",
+    });
+    expect(notificationDeliveryPresentation("PENDING")).toMatchObject({
+      webhook: "PENDING",
+      tone: "pending",
+    });
+    expect(notificationDeliveryPresentation("SKIPPED")).toMatchObject({
+      webhook: "NOT CONFIGURED",
+      tone: "muted",
+    });
+    const component = source("src/components/notification-center.tsx");
+    expect(component).toContain('<span className="notification-delivery-label">Delivery</span>');
+    expect(component).toContain('className="delivery-in-app" aria-label="In-app recorded"');
+    expect(component).toContain('<span className="delivery-channel">In-app</span>');
+    expect(component).toContain('<span className="delivery-channel">Webhook</span>');
+    expect(component).toContain('? "•"');
+    expect(component).not.toContain("delivery.inApp.charAt");
+  });
+
+  it("keeps delivery inline on desktop and wraps without horizontal overflow", () => {
+    const css = source("src/app/productization.css");
+    const deliveryStyles = css.slice(css.indexOf(".notification-list .notification-delivery"));
+    expect(deliveryStyles).toContain("display: flex");
+    expect(deliveryStyles).toContain("flex-wrap: wrap");
+    expect(deliveryStyles).toContain("max-width: 100%");
+    expect(deliveryStyles).toContain("min-width: 0");
+    expect(deliveryStyles).toContain("white-space: nowrap");
+  });
+
+  it("keeps an execution failure primary and renders webhook failure as secondary warning", () => {
+    expect(notificationEventTone("EXECUTION_FAILED")).toBe("danger");
+    expect(notificationDeliveryPresentation("FAILED")).toMatchObject({
+      inApp: "RECORDED",
+      webhook: "FAILED",
+      tone: "warning",
+    });
+  });
+
+  it("keeps a recommendation successful when its webhook delivery fails", () => {
+    expect(notificationEventTone("MEI_SELECTED")).toBe("good");
+    expect(notificationDeliveryPresentation("FAILED").tone).toBe("warning");
+  });
+
+  it("keeps a confirmed execution successful and labels delivered transport separately", () => {
+    expect(notificationEventTone("EXECUTION_CONFIRMED")).toBe("good");
+    expect(notificationDeliveryPresentation("DELIVERED")).toEqual({
+      inApp: "RECORDED",
+      webhook: "DELIVERED",
+      tone: "success",
+    });
+  });
+
+  it("presents skipped or unavailable webhooks as not configured without changing the event", () => {
+    expect(notificationEventTone("RISK_WATCH")).toBe("warn");
+    expect(notificationDeliveryPresentation("SKIPPED")).toEqual({
+      inApp: "RECORDED",
+      webhook: "NOT CONFIGURED",
+      tone: "muted",
+    });
+  });
+
+  it("places grouped execution delivery outside execution proof and timeline rows", () => {
+    const component = source("src/components/notification-center.tsx");
+    const group = component.slice(component.indexOf("function ExecutionNotificationGroup"));
+    expect(group.indexOf('className="execution-notification-proof"')).toBeLessThan(
+      group.indexOf("<NotificationDelivery status={item.latest.webhookStatus}"),
+    );
+    expect(group.indexOf("<NotificationDelivery status={item.latest.webhookStatus}")).toBeLessThan(
+      group.indexOf('className="notification-update-group"'),
+    );
+    expect(group).toContain("showDelivery={false}");
+    expect(component.indexOf("<p>{notice.message}</p>")).toBeLessThan(
+      component.indexOf("{showDelivery && <NotificationDelivery"),
+    );
+    const css = source("src/app/productization.css");
+    expect(css).toContain(".delivery-webhook.warning");
   });
 });
 

@@ -3,7 +3,15 @@ import { PageHeader } from "@/components/ui";
 import { getServerSession } from "@/lib/security/session-context";
 import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
-const notificationFilters = ["all", "risk", "recommendations", "executions", "failures", "system"];
+const notificationFilters = [
+  "all",
+  "risk",
+  "recommendations",
+  "executions",
+  "failures",
+  "delivery",
+  "system",
+];
 export default async function NotificationsPage({
   searchParams,
 }: {

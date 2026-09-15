@@ -1,7 +1,8 @@
 import { classifyActionNotificationChange, type NotificationAction } from "./transitions";
 import { classifyProtectionEvent, type EventCategory } from "./classification";
 
-export type NotificationFilter = "all" | EventCategory;
+export type NotificationFilter = "all" | EventCategory | "delivery";
+export const NOTIFICATION_PAGE_SIZE = 25;
 
 export type NotificationRecord = {
   id: string;
@@ -35,10 +36,11 @@ export function filterNotifications(
   filter: NotificationFilter,
 ) {
   if (filter === "all") return notifications;
-  return notifications.filter((notice) => {
-    if (filter === "failures" && notice.webhookStatus === "FAILED") return true;
-    return classifyProtectionEvent({ ...notice, webhookStatus: undefined }) === filter;
-  });
+  if (filter === "delivery")
+    return notifications.filter(
+      (notice) => notice.webhookStatus === "FAILED" || notice.webhookStatus === "PENDING",
+    );
+  return notifications.filter((notice) => classifyProtectionEvent(notice) === filter);
 }
 
 const executionIdentity = (notice: NotificationRecord) => {
@@ -59,10 +61,7 @@ export function groupExecutionNotifications(
   >();
   const result: MeaningfulNotificationItem[] = [];
   for (const item of items) {
-    if (
-      item.kind !== "notification" ||
-      classifyProtectionEvent({ ...item.notice, webhookStatus: undefined }) !== "executions"
-    ) {
+    if (item.kind !== "notification" || classifyProtectionEvent(item.notice) !== "executions") {
       result.push(item);
       continue;
     }
@@ -218,9 +217,25 @@ export function notificationFilterCount(
   return filterNotifications(notifications, filter).length;
 }
 
-export function deliveryStatusCopy(status: string) {
-  if (status === "FAILED") return "In-app notification recorded · Webhook delivery failed";
-  if (status === "DELIVERED") return "In-app notification recorded · Webhook delivered";
-  if (status === "PENDING") return "In-app notification recorded · Webhook pending";
-  return "In-app notification recorded · Webhook not configured";
+export function paginateNotificationItems<T>(items: T[], visibleCount: number) {
+  return items.slice(0, Math.max(NOTIFICATION_PAGE_SIZE, visibleCount));
+}
+
+export type DeliveryPresentation = {
+  inApp: "RECORDED";
+  webhook: "DELIVERED" | "FAILED" | "PENDING" | "NOT CONFIGURED";
+  tone: "success" | "warning" | "pending" | "muted";
+};
+
+export function notificationDeliveryPresentation(status: string): DeliveryPresentation {
+  if (status === "FAILED") return { inApp: "RECORDED", webhook: "FAILED", tone: "warning" };
+  if (status === "DELIVERED") return { inApp: "RECORDED", webhook: "DELIVERED", tone: "success" };
+  if (status === "PENDING") return { inApp: "RECORDED", webhook: "PENDING", tone: "pending" };
+  return { inApp: "RECORDED", webhook: "NOT CONFIGURED", tone: "muted" };
+}
+
+export function notificationEventTone(type: string) {
+  if (type.includes("FAILED") || type.includes("BLOCKED")) return "danger" as const;
+  if (type.includes("RISK") || type === "APPROVAL_REQUIRED") return "warn" as const;
+  return "good" as const;
 }

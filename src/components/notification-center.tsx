@@ -6,8 +6,11 @@ import { LoadingButton } from "./loading-button";
 import {
   buildNotificationItems,
   buildMeaningfulNotifications,
-  deliveryStatusCopy,
+  NOTIFICATION_PAGE_SIZE,
+  notificationDeliveryPresentation,
+  notificationEventTone,
   notificationFilterCount,
+  paginateNotificationItems,
   type NotificationFilter,
   type NotificationRecord as Notice,
 } from "@/lib/notifications/presentation";
@@ -30,6 +33,7 @@ const filters: Array<{ value: NotificationFilter; label: string }> = [
   { value: "recommendations", label: "Recommendations" },
   { value: "executions", label: "Executions" },
   { value: "failures", label: "Failures" },
+  { value: "delivery", label: "Delivery" },
   { value: "system", label: "System" },
 ];
 export function NotificationCenter({
@@ -44,6 +48,7 @@ export function NotificationCenter({
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<"meaningful" | "all">("meaningful");
   const [filter, setFilter] = useState<NotificationFilter>(initialFilter);
+  const [visibleCount, setVisibleCount] = useState(NOTIFICATION_PAGE_SIZE);
   const requestInFlight = useRef(false);
   const mounted = useRef(false);
   const meaningful = useMemo(() => buildMeaningfulNotifications(notices), [notices]);
@@ -52,10 +57,19 @@ export function NotificationCenter({
     [filter, notices, view],
   );
   const selectedCount = useMemo(() => notificationFilterCount(notices, filter), [filter, notices]);
+  const renderedItems = useMemo(
+    () => paginateNotificationItems(visibleItems, visibleCount),
+    [visibleCount, visibleItems],
+  );
   const selectFilter = (value: NotificationFilter) => {
     setFilter(value);
+    setVisibleCount(NOTIFICATION_PAGE_SIZE);
     const url = value === "all" ? "/notifications" : `/notifications?filter=${value}`;
     window.history.replaceState(null, "", url);
+  };
+  const selectView = (value: "meaningful" | "all") => {
+    setView(value);
+    setVisibleCount(NOTIFICATION_PAGE_SIZE);
   };
   const load = useCallback(async (initial = false) => {
     if (requestInFlight.current) return;
@@ -173,7 +187,7 @@ export function NotificationCenter({
           role="tab"
           aria-selected={view === "meaningful"}
           className={view === "meaningful" ? "active" : ""}
-          onClick={() => setView("meaningful")}
+          onClick={() => selectView("meaningful")}
         >
           Meaningful
         </button>
@@ -182,7 +196,7 @@ export function NotificationCenter({
           role="tab"
           aria-selected={view === "all"}
           className={view === "all" ? "active" : ""}
-          onClick={() => setView("all")}
+          onClick={() => selectView("all")}
         >
           All notifications
         </button>
@@ -222,7 +236,7 @@ export function NotificationCenter({
         </div>
       ) : visibleItems.length ? (
         <div className="notification-list">
-          {visibleItems.map((item) =>
+          {renderedItems.map((item) =>
             item.kind === "notification" ? (
               <NotificationRow
                 notice={item.notice}
@@ -272,6 +286,15 @@ export function NotificationCenter({
                 key={item.id}
               />
             ),
+          )}
+          {renderedItems.length < visibleItems.length && (
+            <button
+              type="button"
+              className="button secondary notification-load-more"
+              onClick={() => setVisibleCount((count) => count + NOTIFICATION_PAGE_SIZE)}
+            >
+              Load 25 more
+            </button>
           )}
         </div>
       ) : error ? null : (
@@ -344,6 +367,7 @@ function ExecutionNotificationGroup({
             {metadata.aaveVerified === true ? "verified" : "pending"}
           </span>
         </div>
+        <NotificationDelivery status={item.latest.webhookStatus} />
         <details className="notification-update-group" open>
           <summary>View execution timeline</summary>
           <div>
@@ -355,6 +379,7 @@ function ExecutionNotificationGroup({
                   pendingId={pendingId}
                   mark={mark}
                   compact
+                  showDelivery={false}
                   key={notice.id}
                 />
               ))}
@@ -370,11 +395,13 @@ function NotificationRow({
   pendingId,
   mark,
   compact = false,
+  showDelivery = true,
 }: {
   notice: Notice;
   pendingId: string | null;
   mark: (notificationId?: string) => Promise<void>;
   compact?: boolean;
+  showDelivery?: boolean;
 }) {
   return (
     <article className={`${notice.readAt ? "read" : "unread"}${compact ? " compact" : ""}`}>
@@ -386,23 +413,16 @@ function NotificationRow({
               ? "Protection recommendation updated"
               : (labels[notice.type] ?? notice.title)}
           </b>
-          <StatusPill
-            tone={
-              notice.type.includes("FAILED") || notice.type.includes("BLOCKED")
-                ? "danger"
-                : notice.type.includes("RISK") || notice.type === "APPROVAL_REQUIRED"
-                  ? "warn"
-                  : "good"
-            }
-          >
+          <StatusPill tone={notificationEventTone(notice.type)}>
             {notice.readAt ? "READ" : "NEW"}
           </StatusPill>
         </div>
         <h3>{notice.title}</h3>
         <p>{notice.message}</p>
-        <small>
-          {new Date(notice.createdAt).toLocaleString()} · {deliveryStatusCopy(notice.webhookStatus)}
+        <small className="notification-timestamp">
+          {new Date(notice.createdAt).toLocaleString()}
         </small>
+        {showDelivery && <NotificationDelivery status={notice.webhookStatus} />}
       </div>
       {!notice.readAt && (
         <LoadingButton
@@ -416,5 +436,31 @@ function NotificationRow({
         </LoadingButton>
       )}
     </article>
+  );
+}
+
+function NotificationDelivery({ status }: { status: string }) {
+  const delivery = notificationDeliveryPresentation(status);
+  const marker =
+    delivery.tone === "success"
+      ? "✓"
+      : delivery.tone === "warning"
+        ? "⚠"
+        : delivery.tone === "pending"
+          ? "•"
+          : "—";
+  return (
+    <div className="notification-delivery" aria-label="Notification delivery">
+      <span className="notification-delivery-label">Delivery</span>
+      <span className="delivery-in-app" aria-label="In-app recorded">
+        <span className="delivery-channel">In-app</span>
+        <span aria-hidden="true">✓</span>
+      </span>
+      <span className={`delivery-webhook ${delivery.tone}`}>
+        <span className="delivery-channel">Webhook</span>
+        <span aria-hidden="true">{marker}</span>
+        <span>{delivery.webhook.charAt(0) + delivery.webhook.slice(1).toLowerCase()}</span>
+      </span>
+    </div>
   );
 }

@@ -3,11 +3,9 @@ export type EventCategory = "risk" | "recommendations" | "executions" | "failure
 export function classifyProtectionEvent(input: {
   type: string;
   severity?: string;
-  webhookStatus?: string;
   metadata?: Record<string, unknown>;
 }): EventCategory {
   if (
-    input.webhookStatus === "FAILED" ||
     input.type === "EXECUTION_FAILED" ||
     input.type === "MONITORING_FAILED" ||
     input.type === "WEBHOOK_FAILED" ||

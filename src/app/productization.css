@@ -226,6 +226,60 @@
 .execution-notification-proof code {
   overflow-wrap: anywhere;
 }
+.notification-load-more {
+  display: block;
+  margin: 18px auto 4px;
+}
+.notification-timestamp {
+  display: block;
+  margin-top: 8px;
+}
+.notification-list .notification-delivery {
+  align-items: center;
+  border-top: 1px solid rgba(132, 150, 170, 0.14);
+  color: #8496aa;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 8px;
+  gap: 4px 9px;
+  margin-top: 8px;
+  max-width: 100%;
+  min-width: 0;
+  padding-top: 6px;
+}
+.notification-delivery-label {
+  color: #65788d;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.delivery-in-app,
+.delivery-webhook {
+  align-items: center;
+  display: inline-flex;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.delivery-channel {
+  color: #718397;
+  font-weight: 600;
+}
+.delivery-in-app,
+.delivery-webhook.success {
+  color: #7fb9a5;
+}
+.delivery-webhook.warning {
+  color: #c6a369;
+}
+.delivery-webhook.pending {
+  color: #82a9d5;
+}
+.delivery-webhook.muted {
+  color: #718397;
+}
 .notification-list article {
   display: grid;
   grid-template-columns: 8px 1fr auto;
