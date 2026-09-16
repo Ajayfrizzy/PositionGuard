@@ -48,7 +48,7 @@ Repository-recorded evidence: KeeperHub execution r2glntpejp16jxatt6th8; repay 0
 
 ## Demo video
 
-TBD — YouTube link will be added before submission.
+Demo video: https://youtu.be/gY-vJ8RZNS4
 
 ## Key features
 
