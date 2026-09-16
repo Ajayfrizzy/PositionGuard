@@ -99,7 +99,7 @@ The repository's canonical persisted historical record documents one confirmed B
 | Transaction            | [`0xc140…d7ba1`](https://sepolia.basescan.org/tx/0xc140daf6aed1e8e0623eaadbaee7dee5a59ffe860c9bd576d606401d761d7ba1) |
 | After HF               | `1.599999884615885683`                                                                                               |
 
-During the documentation audit, a read-only Base Sepolia RPC check independently confirmed that the transaction succeeded at block `46623821`. The Aave V3 Pool `Repay`event records `212852`units of the configured six-decimal USDC for the protected account, with the configured KeeperHub execution wallet as repayer. The transaction and Aave repayment event are independently verifiable on Base Sepolia, while the before/after health factor and KeeperHub execution ID are persisted as PositionGuard application evidence.
+During the documentation audit, a read-only Base Sepolia RPC check independently confirmed that the transaction succeeded at block `46623821`. The Aave V3 Pool `Repay` event records `212852` units of the configured six-decimal USDC for the protected account, with the configured KeeperHub execution wallet as repayer. The transaction and Aave repayment event are independently verifiable on Base Sepolia, while the before/after health factor and KeeperHub execution ID are persisted as PositionGuard application evidence.
 
 The Dashboard, Protection, and Activity views do not contain hardcoded success values. They select a `CONFIRMED`, `receiptVerified` execution and its related decision/snapshot from PostgreSQL. A currently safe position may correctly show **No action required** while this separately labeled historical execution remains visible.
 
